@@ -15,6 +15,7 @@ pub struct Request {
     pub bodybuf: Option<ByteBuffer>,
 }
 
+#[derive(Debug)]
 enum ReadStatus {
     None,
     Headers,
@@ -41,7 +42,11 @@ impl Request {
                     buf.clear();
                     match reader.read_line(buf).await {
                         Ok(s) => {
-                            if s <= 2 {
+                            if s == 0 {
+                                return Err(0);
+                            }
+
+                            if s == 2 {
                                 continue;
                             }
 
@@ -85,7 +90,11 @@ impl Request {
                     buf.clear();
                     match reader.read_line(buf).await {
                         Ok(s) => {
-                            if s <= 2 {
+                            if s == 0 {
+                                return Err(0);
+                            }
+
+                            if s == 2 {
                                 status = ReadStatus::Body;
 
                                 match req.headers.contentlength() {
@@ -101,7 +110,7 @@ impl Request {
                                             if body_remains > 0 {
                                                 req.bodybuf = Some(ByteBuffer::new());
                                                 buf.clear();
-                                                for _ in 0..buf.capacity() {
+                                                for _ in 0..(std::cmp::min(buf.capacity(), body_remains as usize)) {
                                                     buf.push(0 as char);
                                                 }
                                             }
@@ -138,7 +147,9 @@ impl Request {
                     }
                 }
                 ReadStatus::Body => {
-                    if is_chunked {} else {
+                    if is_chunked {
+                        // todo read chunked body
+                    } else {
                         if body_remains > 0 {
                             let bytes: &mut [u8];
                             unsafe {
@@ -146,7 +157,10 @@ impl Request {
                             }
                             match reader.read(bytes).await {
                                 Ok(s) => {
-                                    println!("{} {}", s, body_remains);
+                                    if s < 1 {
+                                        return Err(0);
+                                    }
+
                                     ByteBuffer::write(req.bodybuf.as_mut().unwrap(), &bytes[0..s]).unwrap();
                                     body_remains -= s as i64;
                                 }

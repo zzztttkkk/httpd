@@ -11,7 +11,7 @@ pub struct Uri<'a> {
 
 impl<'a> Uri<'a> {
     pub fn new(raw: &'a str) -> Self {
-        return Self {
+        Self {
             _raw: raw,
             _scheme: "",
             _username: "",
@@ -20,7 +20,7 @@ impl<'a> Uri<'a> {
             _port: "",
             _path: "",
             _raw_query: "",
-        };
+        }
     }
 
     pub fn parse(&mut self) {
