@@ -6,3 +6,5 @@ mod error;
 mod uri;
 mod headers;
 mod response;
+mod compress;
+mod message;

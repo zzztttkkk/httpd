@@ -1,6 +1,6 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
 use tokio::io::{AsyncWriteExt, BufStream};
 use tokio::net::{TcpListener, TcpStream};
@@ -10,6 +10,8 @@ mod request;
 mod headers;
 mod response;
 mod handler;
+mod compress;
+mod message;
 
 struct AliveCounter {
     counter: Arc<AtomicI64>,
@@ -35,11 +37,11 @@ async fn http11(stream: TcpStream, counter: Arc<AtomicI64>) {
     let mut stream = Box::pin(BufStream::new(stream));
     let mut buf = String::with_capacity(4096);
     loop {
-        match request::Request::from11(stream.as_mut(), &mut buf).await {
+        match request::from11(stream.as_mut(), &mut buf).await {
             Ok(req) => {
                 let _ = AliveCounter::new(counter.clone());
 
-                println!("[{}] Request: {} {}", chrono::Local::now(), &req.method, &req.rawpath);
+                println!("[{}] Request: {} {}", chrono::Local::now(), req.method(), req.rawpath());
                 let _ = stream.write("HTTP/1.0 200 OK\r\nContent-Length: 12\r\n\r\nHello World!".as_bytes()).await;
                 let _ = stream.flush().await;
             }
