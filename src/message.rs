@@ -1,11 +1,12 @@
 use std::fmt::Formatter;
 use std::io::{Read, Write};
-use std::time::Duration;
 
 use bytebuffer::ByteBuffer;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt};
 
 use crate::compress::{CompressWriter, Deflate, Gzip, Zlib};
+use crate::config::Config;
+use crate::error::StatusCodeError;
 use crate::headers::Headers;
 
 pub struct ByteBufferWrapper {
@@ -175,15 +176,16 @@ pub struct Message {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum ReadStatus {
+enum ReadStatus {
     None,
     Headers,
     Body(i64),
     Ok,
 }
 
+
 impl Message {
-    pub async fn from11<Reader: AsyncBufReadExt + Unpin + Send>(mut reader: Reader, buf: &mut String, onstatus: fn(ReadStatus, &Message) -> Result<(), i32>) -> Result<Self, i32> {
+    pub async fn from11<Reader: AsyncBufReadExt + Unpin + Send>(mut reader: Reader, buf: &mut String, cfg: &Config) -> Result<Self, StatusCodeError> {
         let mut status = ReadStatus::None;
         let mut msg = Message {
             f0: "".to_string(),
@@ -203,7 +205,7 @@ impl Message {
                     match reader.read_line(buf).await {
                         Ok(s) => {
                             if s == 0 {
-                                return Err(0);
+                                return Err(StatusCodeError::new(0));
                             }
 
                             if s == 2 {
@@ -239,11 +241,10 @@ impl Message {
                                 }
                             }
                             status = ReadStatus::Headers;
-                            onstatus(status, &msg)?;
                         }
                         Err(e) => {
                             println!("{}", e);
-                            return Err(400);
+                            return Err(StatusCodeError::new(0));
                         }
                     }
                 }
@@ -252,7 +253,7 @@ impl Message {
                     match reader.read_line(buf).await {
                         Ok(s) => {
                             if s == 0 {
-                                return Err(0);
+                                return Err(StatusCodeError::new(0));
                             }
 
                             if s == 2 {
@@ -261,7 +262,7 @@ impl Message {
                                     Some(cl) => {
                                         if cl < 0 {
                                             if !msg.headers.ischunked() {
-                                                return Err(400);
+                                                return Err(StatusCodeError::new(0));
                                             }
                                             is_chunked = true;
                                         } else {
@@ -279,14 +280,13 @@ impl Message {
                                     }
                                 }
                                 status = ReadStatus::Body(body_remains);
-                                onstatus(status, &msg)?;
                                 continue;
                             }
 
                             let mut parts = buf.splitn(2, ':');
                             let key = match parts.next() {
                                 None => {
-                                    return Err(400);
+                                    return Err(StatusCodeError::new(0));
                                 }
                                 Some(v) => {
                                     v
@@ -295,7 +295,7 @@ impl Message {
 
                             match parts.next() {
                                 None => {
-                                    return Err(400);
+                                    return Err(StatusCodeError::new(0));
                                 }
                                 Some(v) => {
                                     msg.headers.add(key, v.trim());
@@ -304,7 +304,7 @@ impl Message {
                         }
                         Err(e) => {
                             println!("{}", e);
-                            return Err(400);
+                            return Err(StatusCodeError::new(0));
                         }
                     }
                 }
@@ -320,38 +320,26 @@ impl Message {
                             match reader.read(bytes).await {
                                 Ok(s) => {
                                     if s < 1 {
-                                        return Err(0);
+                                        return Err(StatusCodeError::new(0));
                                     }
                                     msg.bodybuf.as_mut().unwrap().writeraw(&bytes[0..s]);
                                     body_remains -= s as i64;
                                 }
                                 Err(e) => {
                                     println!("{}", e);
-                                    return Err(400);
+                                    return Err(StatusCodeError::new(0));
                                 }
                             };
                         }
 
                         if body_remains <= 0 {
                             status = ReadStatus::Ok;
-                            onstatus(status, &msg)?;
                         }
                     }
                 }
                 ReadStatus::Ok => {
                     return Ok(msg);
                 }
-            }
-        }
-    }
-
-    pub async fn from11_with_timeout<Reader: AsyncBufReadExt + Unpin + Send>(mut reader: Reader, buf: &mut String, onstatus: fn(ReadStatus, &Message) -> Result<(), i32>, timeout: u64) -> Result<Self, i32> {
-        tokio::select! {
-            result = Self::from11(reader, buf, onstatus) => {
-                result
-            }
-            _ = tokio::time::sleep(Duration::from_millis(timeout)) => {
-                Err(2)
             }
         }
     }

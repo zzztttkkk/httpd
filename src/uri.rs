@@ -23,6 +23,10 @@ impl<'a> Uri<'a> {
         }
     }
 
+    pub fn init(&mut self, v: &'a str) {
+        self._raw = v;
+    }
+
     pub fn parse(&mut self) {
         let mut tmp = self._raw;
         match tmp.find("://") {

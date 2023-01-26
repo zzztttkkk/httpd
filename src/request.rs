@@ -1,47 +1,33 @@
 use tokio::io::AsyncBufReadExt;
 
-use crate::message::{Message, ReadStatus};
+use crate::config::Config;
+use crate::error::StatusCodeError;
+use crate::message::Message;
+use crate::uri::Uri;
 
-pub struct Request {
+pub struct Request<'a> {
     msg: Message,
+    uri: Uri<'a>,
 }
 
-static MAX_BODY_SIZE: i64 = 10 * 1024 * 1024;
 
-impl Request {
-    fn onstatus(status: ReadStatus, msg: &Message) -> Result<(), i32> {
-        match status {
-            ReadStatus::Headers => {
-                if msg.f0.is_empty() || msg.f1.is_empty() || msg.f2.is_empty() {
-                    return Err(1);
-                }
-            }
-            ReadStatus::Body(size) => {
-                if size > MAX_BODY_SIZE {
-                    return Err(1);
-                }
-            }
-            ReadStatus::Ok => {
-                
-            }
-            _ => {}
-        }
-        Ok(())
-    }
-}
-
-impl Request {
+impl<'a> Request<'a> {
     pub fn method(&self) -> &str { self.msg.f0.as_str() }
 
     pub fn rawpath(&self) -> &str { self.msg.f1.as_str() }
 
     pub fn protoversion(&self) -> &str { self.msg.f2.as_str() }
+
+    pub fn url(&mut self) -> &Uri<'a> {
+        &self.uri
+    }
 }
 
-pub async fn from11<Reader: AsyncBufReadExt + Unpin + Send>(reader: Reader, buf: &mut String) -> Result<Request, i32> {
-    return match Message::from11(reader, buf, Request::onstatus).await {
+
+pub async fn from11<'a, Reader: AsyncBufReadExt + Unpin + Send>(reader: Reader, buf: &mut String, cfg: &Config) -> Result<Request<'a>, StatusCodeError> {
+    return match Message::from11(reader, buf, cfg).await {
         Ok(msg) => {
-            Ok(Request { msg })
+            Ok(Request { msg, uri: Uri::new("") })
         }
         Err(e) => {
             Err(e)
