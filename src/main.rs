@@ -1,6 +1,8 @@
 #![allow(dead_code)]
 #![allow(unused)]
 
+extern crate core;
+
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::Duration;
@@ -50,7 +52,7 @@ impl Drop for AliveCounter {
 async fn http11(stream: TcpStream, counter: Arc<AtomicI64>, cfg: Config) {
     let mut stream = Box::pin(BufStream::new(stream));
     let mut buf = String::with_capacity(cfg.read_buf_cap);
-    let fsh = FsHandler::new("./");
+    let fsh = FsHandler::new("./", "/");
 
     loop {
         tokio::select! {
