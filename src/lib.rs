@@ -11,3 +11,4 @@ mod compress;
 mod message;
 mod config;
 mod fs;
+mod multi_value_map;

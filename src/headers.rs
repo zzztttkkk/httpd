@@ -1,118 +1,85 @@
-use std::collections::HashMap;
-
-#[derive(Debug)]
-struct KvItem {
-    key: String,
-    val: String,
-    ok: bool,
-}
-
-#[derive(Debug)]
-struct KvItems {
-    items: Vec<KvItem>,
-    bad_idxes: Vec<usize>,
-}
-
-impl KvItems {
-    fn new() -> Self {
-        Self { items: vec![], bad_idxes: vec![] }
-    }
-
-    fn add(&mut self, k: &str, v: &str) {
-        if let Some(idx) = self.bad_idxes.pop() {
-            let item = &mut self.items[idx];
-            item.key.clear();
-            item.key.push_str(k);
-            item.val.clear();
-            item.val.push_str(v);
-            return;
-        }
-        self.items.push(KvItem {
-            key: k.to_string(),
-            val: v.to_string(),
-            ok: true,
-        });
-    }
-
-    fn _find(&self, k: &str) {}
-}
-
+use crate::compress::CompressType;
+use crate::multi_value_map::MultiValuesMap;
 
 #[derive(Debug)]
 pub struct Headers {
-    items: Option<KvItems>,
-    map: Option<HashMap<String, Vec<String>>>,
-
+    map: Option<MultiValuesMap>,
     _content_length: Option<i64>,
+    _is_chunked: Option<bool>,
+    _compress_type: Option<Result<CompressType, String>>,
 }
 
 impl Headers {
     pub fn new() -> Self {
-        Self { items: None, map: Some(HashMap::new()), _content_length: None }
+        Self { map: None, _content_length: None, _is_chunked: None, _compress_type: None }
     }
 
-    pub fn add(&mut self, k: &str, v: &str) {
+    pub fn append(&mut self, k: &str, v: &str) {
         match &mut self.map {
             None => {
-                println!("{} {}", k, v);
+                let mut map = MultiValuesMap::new();
+                map.append(k, v);
+                self.map = Some(map);
             }
-            Some(m) => {
-                match m.get_mut(k) {
-                    None => {
-                        m.insert(k.to_string(), vec![v.to_string()]);
-                    }
-                    Some(lst) => {
-                        lst.push(v.to_string());
-                    }
-                }
+            Some(map) => {
+                map.append(k, v);
             }
         }
     }
 
-    pub fn set(&mut self, k: &str, v: &str) {}
-
-    pub fn del(&mut self, k: &str) {}
-
-    pub fn contains(&self, k: &str) {}
-
-    pub fn get(&self, k: &str) -> Option<&str> {
-        match &self.map {
+    pub fn set(&mut self, k: &str, v: &str) {
+        match &mut self.map {
             None => {
-                None
+                let mut map = MultiValuesMap::new();
+                map.append(k, v);
+                self.map = Some(map);
             }
-            Some(m) => {
-                match m.get(k) {
-                    None => {
-                        None
-                    }
-                    Some(lst) => {
-                        match lst.first() {
-                            None => {
-                                None
-                            }
-                            Some(v) => {
-                                Some(v)
-                            }
-                        }
-                    }
-                }
+            Some(map) => {
+                map.set(k, v);
             }
+        }
+    }
+
+    pub fn remove(&mut self, k: &str) {
+        match &mut self.map {
+            None => {}
+            Some(map) => { map.remove(k); }
+        }
+    }
+
+    pub fn contains(&self, k: &str) -> bool {
+        match &self.map {
+            None => { false }
+            Some(map) => { map.contains(k) }
+        }
+    }
+
+    pub fn get(&self, k: &str) -> Option<&String> {
+        match &self.map {
+            None => { None }
+            Some(map) => { map.get(k) }
         }
     }
 
     pub fn getall(&self, k: &str) -> Option<&Vec<String>> {
-        None
+        match &self.map {
+            None => { None }
+            Some(map) => { map.getall(k) }
+        }
     }
 
     pub fn getallmut(&mut self, k: &str) -> Option<&mut Vec<String>> {
-        None
+        match &mut self.map {
+            None => { None }
+            Some(map) => { map.getallmut(k) }
+        }
     }
 
     pub fn contentlength(&mut self) -> Option<i64> {
         match &mut self._content_length {
             None => {
                 let l: i64;
-                match self.get("Content-Length") {
+                match self.get("content-length") {
                     None => {
                         l = -1;
                     }
@@ -140,8 +107,46 @@ impl Headers {
         None
     }
 
+    pub fn compresstype(&mut self) -> Result<CompressType, String> {
+        match self._compress_type {
+            None => {}
+            Some(_) => {}
+        }
+        Err("".to_string())
+    }
+
     pub fn ischunked(&mut self) -> bool {
-        false
+        match self._is_chunked {
+            None => {
+                let mut v: bool = false;
+
+                match self.getall("transfer-encoding") {
+                    None => {}
+                    Some(vec) => {
+                        for item in vec.iter() {
+                            if item == "chunked" {
+                                v = true;
+                                break;
+                            }
+
+                            if !item.contains(',') {
+                                continue;
+                            }
+
+                            let fo = item.split(',').map(|v| { v.trim() }).find(|&x| x == "chunked");
+                            if fo.is_some() {
+                                v = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                self._is_chunked = Some(v);
+                v
+            }
+            Some(v) => { v }
+        }
     }
 }
 

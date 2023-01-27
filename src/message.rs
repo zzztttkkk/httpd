@@ -1,10 +1,11 @@
 use std::fmt::Formatter;
 use std::io::{Read, Write};
+use std::num::ParseIntError;
 
 use bytebuffer::ByteBuffer;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt};
 
-use crate::compress::{CompressWriter, Deflate, Gzip, Zlib};
+use crate::compress::{CompressType, CompressWriter, Deflate, Gzip, Zlib};
 use crate::config::Config;
 use crate::error::StatusCodeError;
 use crate::headers::Headers;
@@ -47,12 +48,6 @@ pub struct BodyBuf {
     raw: Option<ByteBuffer>,
     decoder: Option<Box<dyn Read + Send>>,
     encoder: Option<Box<dyn CompressWriter + Send>>,
-}
-
-pub enum CompressType {
-    Gzip,
-    Deflate,
-    Zlib,
 }
 
 impl BodyBuf {
@@ -203,17 +198,21 @@ impl Message {
                 ReadStatus::None => {
                     buf.clear();
                     match reader.read_line(buf).await {
-                        Ok(s) => {
-                            if s == 0 {
+                        Ok(line_size) => {
+                            if line_size < 2 {
                                 return Err(StatusCodeError::new(0));
                             }
 
-                            if s == 2 {
+                            if line_size == 2 {
                                 continue;
                             }
 
                             let mut fls = 0;
                             for rune in buf.chars() {
+                                if rune > 127 as char {
+                                    return Err(StatusCodeError::new(0));
+                                }
+
                                 match fls {
                                     0 => {
                                         if rune == ' ' {
@@ -251,12 +250,12 @@ impl Message {
                 ReadStatus::Headers => {
                     buf.clear();
                     match reader.read_line(buf).await {
-                        Ok(s) => {
-                            if s == 0 {
+                        Ok(line_size) => {
+                            if line_size < 2 {
                                 return Err(StatusCodeError::new(0));
                             }
 
-                            if s == 2 {
+                            if line_size == 2 {
                                 match msg.headers.contentlength() {
                                     None => {}
                                     Some(cl) => {
@@ -265,15 +264,17 @@ impl Message {
                                                 return Err(StatusCodeError::new(0));
                                             }
                                             is_chunked = true;
+                                            msg.bodybuf = Some(BodyBuf::new(Some(ByteBuffer::new())));
                                         } else {
                                             body_remains = cl;
                                             if body_remains > 0 {
                                                 let mut bbuf = ByteBuffer::new();
                                                 bbuf.resize(body_remains as usize);
                                                 msg.bodybuf = Some(BodyBuf::new(Some(bbuf)));
-                                                buf.clear();
-                                                for _ in 0..(std::cmp::min(buf.capacity(), body_remains as usize)) {
-                                                    buf.push(0 as char);
+
+                                                unsafe {
+                                                    let mut vec = buf.as_mut_vec();
+                                                    vec.resize(vec.capacity(), 0);
                                                 }
                                             }
                                         }
@@ -281,6 +282,10 @@ impl Message {
                                 }
                                 status = ReadStatus::Body(body_remains);
                                 continue;
+                            }
+
+                            if !buf.is_ascii() {
+                                return Err(StatusCodeError::new(0));
                             }
 
                             let mut parts = buf.splitn(2, ':');
@@ -298,7 +303,7 @@ impl Message {
                                     return Err(StatusCodeError::new(0));
                                 }
                                 Some(v) => {
-                                    msg.headers.add(key, v.trim());
+                                    msg.headers.append(key, v.trim());
                                 }
                             }
                         }
@@ -310,7 +315,87 @@ impl Message {
                 }
                 ReadStatus::Body(_) => {
                     if is_chunked {
-                        // todo read chunked body
+                        loop {
+                            buf.clear();
+
+                            match reader.read_line(buf).await {
+                                Ok(line_size) => {
+                                    if line_size < 2 {
+                                        return Err(StatusCodeError::new(0));
+                                    }
+
+                                    if line_size == 2 {
+                                        status = ReadStatus::Ok;
+                                        break;
+                                    }
+
+                                    let mut remain_chunk_size = match buf.as_str()[0..line_size - 2].parse::<usize>() {
+                                        Ok(v) => { v }
+                                        Err(e) => {
+                                            println!("ParseChunkSizeFailed: {:?}", e);
+                                            return Err(StatusCodeError::new(0));
+                                        }
+                                    };
+
+                                    unsafe {
+                                        let mut vec = buf.as_mut_vec();
+                                        vec.resize(vec.capacity(), 0);
+                                    }
+
+                                    let bytes: &mut [u8];
+                                    unsafe {
+                                        bytes = buf.as_bytes_mut();
+                                    }
+
+                                    loop {
+                                        match reader.read(bytes).await {
+                                            Ok(rbs) => {
+                                                if rbs < 1 {
+                                                    return Err(StatusCodeError::new(0));
+                                                }
+
+                                                msg.bodybuf.as_mut().unwrap().writeraw(&bytes[0..rbs]);
+
+                                                if remain_chunk_size <= rbs {
+                                                    break;
+                                                }
+                                                remain_chunk_size -= rbs;
+                                            }
+                                            Err(e) => {
+                                                println!("{}", e);
+                                                return Err(StatusCodeError::new(0));
+                                            }
+                                        }
+                                    }
+
+                                    match reader.read_u8().await {
+                                        Ok(v) => {
+                                            if v != b'\r' {
+                                                return Err(StatusCodeError::new(0));
+                                            }
+                                        }
+                                        Err(_) => {
+                                            return Err(StatusCodeError::new(0));
+                                        }
+                                    }
+
+                                    match reader.read_u8().await {
+                                        Ok(v) => {
+                                            if v != b'\n' {
+                                                return Err(StatusCodeError::new(0));
+                                            }
+                                        }
+                                        Err(_) => {
+                                            return Err(StatusCodeError::new(0));
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    println!("{:?}", e);
+                                    return Err(StatusCodeError::new(0));
+                                }
+                            }
+                        }
                     } else {
                         if body_remains > 0 {
                             let bytes: &mut [u8];

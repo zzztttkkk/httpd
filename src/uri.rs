@@ -3,7 +3,7 @@ use std::fmt::{Formatter, write};
 use std::num::ParseIntError;
 
 /// UNSAFE!!!!!!!!!!!!!!!!!
-pub struct Uri {
+pub struct ReadonlyUri {
     _raw: *const str,
 
     _scheme: *const str,
@@ -20,9 +20,9 @@ pub struct Uri {
     _port_num: i32,
 }
 
-unsafe impl Send for Uri {}
+unsafe impl Send for ReadonlyUri {}
 
-impl fmt::Debug for Uri {
+impl fmt::Debug for ReadonlyUri {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         if !self._parsed {
             return write!(f, "Uri(unparsed){{raw: `{}`}}", unsafe { &*self._raw });
@@ -42,7 +42,7 @@ macro_rules! make_uri_getter {
     };
 }
 
-impl Uri {
+impl ReadonlyUri {
     pub fn new(raw: *const str) -> Self {
         Self {
             _raw: raw,
@@ -77,12 +77,16 @@ impl Uri {
 
         if self._port_num < 0 {
             let v = unsafe { (&*self._port) };
-            match v.parse::<u32>() {
-                Ok(n) => {
-                    self._port_num = n as i32;
-                }
-                Err(_) => {
-                    self._port_num = 0;
+            if v.is_empty() {
+                self._port_num = 0;
+            } else {
+                match v.parse::<u32>() {
+                    Ok(n) => {
+                        self._port_num = n as i32;
+                    }
+                    Err(_) => {
+                        self._port_num = 0;
+                    }
                 }
             }
         }
@@ -179,4 +183,14 @@ impl Uri {
             }
         }
     }
+}
+
+
+pub struct Uri {
+    scheme: String,
+    username: String,
+    password: String,
+    host: String,
+    port: u32,
+    path: String,
 }

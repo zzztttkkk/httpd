@@ -1,5 +1,12 @@
 use std::io::Write;
 
+#[derive(Debug)]
+pub enum CompressType {
+    Gzip,
+    Deflate,
+    Zlib,
+}
+
 pub trait CompressWriter: Write {
     fn finish(&mut self) -> std::io::Result<()>;
 }

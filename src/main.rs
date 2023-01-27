@@ -28,6 +28,7 @@ mod message;
 mod config;
 mod fs;
 mod uri;
+mod multi_value_map;
 
 struct AliveCounter {
     counter: Arc<AtomicI64>,

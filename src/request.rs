@@ -3,11 +3,11 @@ use tokio::io::AsyncBufReadExt;
 use crate::config::Config;
 use crate::error::StatusCodeError;
 use crate::message::Message;
-use crate::uri::Uri;
+use crate::uri::ReadonlyUri;
 
 pub struct Request {
     msg: Message,
-    uri: Option<Uri>,
+    uri: Option<ReadonlyUri>,
 }
 
 
@@ -20,7 +20,7 @@ impl Request {
 
     pub fn url(&mut self) {
         if self.uri.is_none() {
-            self.uri = Some(Uri::new(self.rawpath()));
+            self.uri = Some(ReadonlyUri::new(self.rawpath()));
         }
     }
 }
