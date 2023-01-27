@@ -1,10 +1,9 @@
 use std::io::Write;
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum CompressType {
     Gzip,
     Deflate,
-    Zlib,
 }
 
 pub trait CompressWriter: Write {
@@ -17,10 +16,6 @@ pub struct Gzip<W: Write> {
 
 pub struct Deflate<W: Write> {
     raw: flate2::write::DeflateEncoder<W>,
-}
-
-pub struct Zlib<W: Write> {
-    raw: flate2::write::ZlibEncoder<W>,
 }
 
 macro_rules! impl_compress_encoder {
@@ -64,4 +59,3 @@ macro_rules! impl_compress_encoder {
 
 impl_compress_encoder!(Gzip<W>, flate2::write::GzEncoder::new);
 impl_compress_encoder!(Deflate<W>, flate2::write::DeflateEncoder::new);
-impl_compress_encoder!(Zlib<W>, flate2::write::ZlibEncoder::new);

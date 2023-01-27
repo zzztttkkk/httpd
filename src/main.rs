@@ -3,6 +3,7 @@
 
 extern crate core;
 
+use std::io::Write;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::Duration;
@@ -62,12 +63,11 @@ async fn http11(stream: TcpStream, counter: Arc<AtomicI64>, cfg: Config) {
                     Ok(mut req) => {
                         let _ = AliveCounter::new(counter.clone());
 
-                        let mut resp = Response::new();
+                        let mut resp = Response::default(&mut req);
 
                         match fsh.handle(&mut req, &mut resp).await {
                             Ok(_) => {
-                                println!("[{}] Request: {} {}", chrono::Local::now(), req.method(), req.rawpath());
-                                let _ = stream.write("HTTP/1.0 200 OK\r\nContent-Length: 12\r\n\r\nHello World!".as_bytes()).await;
+                                resp.to(stream.as_mut());
                             }
                             Err(v) => {
                                 println!("[{}] Request: {} {}", chrono::Local::now(), req.method(), req.rawpath());

@@ -3,9 +3,10 @@ use std::io::{Read, Write};
 use std::num::ParseIntError;
 
 use bytebuffer::ByteBuffer;
+use flate2::Compression;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt};
 
-use crate::compress::{CompressType, CompressWriter, Deflate, Gzip, Zlib};
+use crate::compress::{CompressType, CompressWriter, Deflate, Gzip};
 use crate::config::Config;
 use crate::error::StatusCodeError;
 use crate::headers::Headers;
@@ -48,15 +49,17 @@ pub struct BodyBuf {
     raw: Option<ByteBuffer>,
     decoder: Option<Box<dyn Read + Send>>,
     encoder: Option<Box<dyn CompressWriter + Send>>,
+    _encoder_finished: bool,
 }
 
 impl BodyBuf {
     #[inline(always)]
-    fn new(buf: Option<ByteBuffer>) -> Self {
+    pub fn new(buf: Option<ByteBuffer>) -> Self {
         Self {
             raw: buf,
             decoder: None,
             encoder: None,
+            _encoder_finished: false,
         }
     }
 
@@ -65,8 +68,15 @@ impl BodyBuf {
     }
 
     #[inline(always)]
-    pub fn decompress(&mut self) {
-        self.decoder = Some(Box::new(flate2::read::GzDecoder::new(ByteBufferWrapper { ptr: &mut self.raw })));
+    pub fn decompress(&mut self, ct: CompressType) {
+        match ct {
+            CompressType::Gzip => {
+                self.decoder = Some(Box::new(flate2::read::GzDecoder::new(ByteBufferWrapper { ptr: &mut self.raw })));
+            }
+            CompressType::Deflate => {
+                self.decoder = Some(Box::new(flate2::read::DeflateDecoder::new(ByteBufferWrapper { ptr: &mut self.raw })));
+            }
+        }
     }
 
     #[inline(always)]
@@ -78,14 +88,16 @@ impl BodyBuf {
             CompressType::Deflate => {
                 self.encoder = Some(Box::new(Deflate::with_level(ByteBufferWrapper { ptr: &mut self.raw }, level)));
             }
-            CompressType::Zlib => {
-                self.encoder = Some(Box::new(Zlib::with_level(ByteBufferWrapper { ptr: &mut self.raw }, level)));
-            }
         }
     }
 
     #[inline(always)]
     pub fn finishcompress(&mut self) -> std::io::Result<()> {
+        if self._encoder_finished {
+            return Ok(());
+        }
+        self._encoder_finished = true;
+
         match &mut self.encoder {
             None => {
                 Ok(())
@@ -95,6 +107,8 @@ impl BodyBuf {
             }
         }
     }
+
+    pub fn raw(&self) -> Option<&ByteBuffer> { self.raw.as_ref() }
 }
 
 impl Read for BodyBuf {
@@ -161,13 +175,21 @@ impl std::fmt::Debug for BodyBuf {
     }
 }
 
+impl Drop for BodyBuf {
+    fn drop(&mut self) {
+        self.finishcompress();
+    }
+}
+
 #[derive(Debug)]
 pub struct Message {
-    pub f0: String,
-    pub f1: String,
-    pub f2: String,
-    pub headers: Headers,
-    pub bodybuf: Option<BodyBuf>,
+    pub(crate) f0: String,
+    pub(crate) f1: String,
+    pub(crate) f2: String,
+    pub(crate) headers: Headers,
+    pub(crate) bodybuf: Option<BodyBuf>,
+
+    pub(crate) _compress_type: Option<CompressType>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -178,17 +200,21 @@ enum ReadStatus {
     Ok,
 }
 
-
 impl Message {
-    pub async fn from11<Reader: AsyncBufReadExt + Unpin + Send>(mut reader: Reader, buf: &mut String, cfg: &Config) -> Result<Self, StatusCodeError> {
-        let mut status = ReadStatus::None;
-        let mut msg = Message {
+    pub fn new() -> Self {
+        Self {
             f0: "".to_string(),
             f1: "".to_string(),
             f2: "".to_string(),
             headers: Headers::new(),
             bodybuf: None,
-        };
+            _compress_type: None,
+        }
+    }
+
+    pub async fn from11<Reader: AsyncBufReadExt + Unpin + Send>(mut reader: Reader, buf: &mut String, cfg: &Config) -> Result<Self, StatusCodeError> {
+        let mut status = ReadStatus::None;
+        let mut msg = Message::new();
 
         let mut body_remains: i64 = 0;
         let mut is_chunked = false;
@@ -256,7 +282,7 @@ impl Message {
                             }
 
                             if line_size == 2 {
-                                match msg.headers.contentlength() {
+                                match msg.headers.content_length() {
                                     None => {}
                                     Some(cl) => {
                                         if cl < 0 {
@@ -427,5 +453,41 @@ impl Message {
                 }
             }
         }
+    }
+}
+
+impl Write for Message {
+    #[inline(always)]
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let mut init = false;
+        if self.bodybuf.is_none() {
+            self.bodybuf = Some(BodyBuf::new(Some(ByteBuffer::new())));
+            init = true;
+        }
+
+        let body = self.bodybuf.as_mut().unwrap();
+        if init {
+            if let Some(ct) = self._compress_type {
+                body.begincompress(ct, Compression::default());
+                self.headers.set_content_encoding(ct);
+            }
+        }
+
+        body.write(buf)
+    }
+
+    #[inline(always)]
+    fn flush(&mut self) -> std::io::Result<()> {
+        let body = self.bodybuf.as_mut().unwrap();
+        let result = body.flush();
+        if self._compress_type.is_some() {
+            match body.finishcompress() {
+                Ok(_) => {}
+                Err(e) => {
+                    return Err(e);
+                }
+            };
+        }
+        result
     }
 }

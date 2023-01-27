@@ -2,6 +2,8 @@ use core::fmt;
 use std::fmt::{Formatter, write};
 use std::num::ParseIntError;
 
+use crate::multi_value_map::MultiValuesMap;
+
 /// UNSAFE!!!!!!!!!!!!!!!!!
 pub struct ReadonlyUri {
     _raw: *const str,
@@ -18,6 +20,7 @@ pub struct ReadonlyUri {
     _parsed: bool,
     _query_parsed: bool,
     _port_num: i32,
+    _safe_path: Option<String>,
 }
 
 unsafe impl Send for ReadonlyUri {}
@@ -59,6 +62,7 @@ impl ReadonlyUri {
 
             _parsed: false,
             _query_parsed: false,
+            _safe_path: None,
         }
     }
 
@@ -66,9 +70,38 @@ impl ReadonlyUri {
     make_uri_getter!(username, _username);
     make_uri_getter!(password, _password);
     make_uri_getter!(host, _host);
-    make_uri_getter!(path, _path);
     make_uri_getter!(rawquery, _raw_query);
     make_uri_getter!(fragment, _fragment);
+
+    pub fn path(&mut self) -> &String {
+        if self._safe_path.is_none() {
+            if !self._parsed {
+                self.parse();
+            }
+
+            let raw_path = unsafe { &*self._path };
+            let tmp = raw_path.replace('~', "").replace('\\', "/").replace("..", ".");
+            let parts = tmp.split('/').map(|v| v.trim()).filter(|&v| !v.is_empty() && v != ".");
+
+            let mut result = String::new();
+
+            for part in parts {
+                result.push('/');
+                result.push_str(part);
+            }
+
+            if result.is_empty() {
+                result.push('/');
+            }
+
+            if raw_path.ends_with('/') && !result.ends_with('/') {
+                result.push('/');
+            }
+            self._safe_path = Some(result);
+        }
+
+        self._safe_path.as_ref().unwrap()
+    }
 
     pub fn port(&mut self) -> u32 {
         if !self._parsed {
@@ -186,11 +219,40 @@ impl ReadonlyUri {
 }
 
 
-pub struct Uri {
-    scheme: String,
-    username: String,
-    password: String,
-    host: String,
-    port: u32,
-    path: String,
+#[cfg(test)]
+mod tests {
+    use crate::uri::ReadonlyUri;
+
+    #[test]
+    fn safe_path() {
+        let mut v = ReadonlyUri::new("");
+        v._path = "~/../.\\\\./../././.a.r/key.txt/";
+        println!("{}", v.path());
+    }
 }
+
+
+pub struct Uri {
+    pub scheme: String,
+    pub username: String,
+    pub password: String,
+    pub host: String,
+    pub port: u32,
+    pub path: String,
+    pub query: Option<MultiValuesMap>,
+}
+
+impl Uri {
+    pub fn new() -> Self {
+        Self {
+            scheme: "".to_string(),
+            username: "".to_string(),
+            password: "".to_string(),
+            host: "".to_string(),
+            port: 0,
+            path: "".to_string(),
+            query: None,
+        }
+    }
+}
+

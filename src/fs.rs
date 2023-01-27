@@ -1,3 +1,4 @@
+use std::io::Write;
 use std::pin::Pin;
 
 use async_trait::async_trait;
@@ -24,7 +25,10 @@ impl FsHandler {
 #[async_trait]
 impl Handler for FsHandler {
     async fn handle(&self, req: &mut Request, resp: &mut Response) -> Result<(), Box<dyn HTTPError + Send>> {
-        println!("XXX{:?}", req as *mut Request);
+        println!("Req: {:?} {:?}", req as *mut Request, req.headers().compress_type("accept-encoding"));
+        let _ = resp.write("Hello".repeat(100).as_bytes()).unwrap();
+        let _ = resp.write("World".repeat(100).as_bytes()).unwrap();
+
         Ok(())
     }
 }

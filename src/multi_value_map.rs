@@ -63,7 +63,7 @@ impl MultiValuesMap {
         }
     }
 
-    pub fn getall(&self, key: &str) -> Option<&Vec<String>> {
+    pub fn get_all(&self, key: &str) -> Option<&Vec<String>> {
         return match &self.0 {
             None => {
                 None
@@ -81,7 +81,7 @@ impl MultiValuesMap {
         }
     }
 
-    pub fn getallmut(&mut self, key: &str) -> Option<&mut Vec<String>> {
+    pub fn get_all_mut(&mut self, key: &str) -> Option<&mut Vec<String>> {
         return match &mut self.0 {
             None => {
                 None
@@ -109,7 +109,7 @@ impl MultiValuesMap {
     }
 
     pub fn count(&self, key: &str) -> usize {
-        match self.getall(key) {
+        match self.get_all(key) {
             None => {
                 0
             }

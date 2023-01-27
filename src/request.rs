@@ -2,7 +2,8 @@ use tokio::io::AsyncBufReadExt;
 
 use crate::config::Config;
 use crate::error::StatusCodeError;
-use crate::message::Message;
+use crate::headers::Headers;
+use crate::message::{BodyBuf, Message};
 use crate::uri::ReadonlyUri;
 
 pub struct Request {
@@ -10,19 +11,29 @@ pub struct Request {
     uri: Option<ReadonlyUri>,
 }
 
-
 impl Request {
+    #[inline(always)]
     pub fn method(&self) -> &str { self.msg.f0.as_str() }
 
+    #[inline(always)]
     pub fn rawpath(&self) -> &str { self.msg.f1.as_str() }
 
+    #[inline(always)]
     pub fn protoversion(&self) -> &str { self.msg.f2.as_str() }
 
-    pub fn url(&mut self) {
+    #[inline(always)]
+    pub fn uri(&mut self) -> &mut ReadonlyUri {
         if self.uri.is_none() {
             self.uri = Some(ReadonlyUri::new(self.rawpath()));
         }
+        return self.uri.as_mut().unwrap();
     }
+
+    #[inline(always)]
+    pub fn headers(&mut self) -> &mut Headers { &mut self.msg.headers }
+
+    #[inline(always)]
+    pub fn body(&mut self) -> Option<&mut BodyBuf> { self.msg.bodybuf.as_mut() }
 }
 
 
