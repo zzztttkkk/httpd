@@ -24,7 +24,7 @@ impl FsHandler {
 
 #[async_trait]
 impl Handler for FsHandler {
-    async fn handle(&self, req: &mut Request, resp: &mut Response) -> Result<(), Box<dyn HTTPError + Send>> {
+    async fn handle(&mut self, req: &mut Request, resp: &mut Response) -> Result<(), Box<dyn HTTPError + Send>> {
         println!("Req: {:?} {:?}", req as *mut Request, req.headers().compress_type("accept-encoding"));
         let _ = resp.write("Hello".repeat(100).as_bytes()).unwrap();
         let _ = resp.write("World".repeat(100).as_bytes()).unwrap();

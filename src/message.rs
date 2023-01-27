@@ -4,7 +4,7 @@ use std::num::ParseIntError;
 
 use bytebuffer::ByteBuffer;
 use flate2::Compression;
-use tokio::io::{AsyncBufReadExt, AsyncReadExt};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 
 use crate::compress::{CompressType, CompressWriter, Deflate, Gzip};
 use crate::config::Config;
@@ -454,6 +454,10 @@ impl Message {
             }
         }
     }
+
+    pub async fn to11<Writer: AsyncWriteExt + Unpin + Send>(&mut self, mut writer: Writer) -> Result<(), StatusCodeError> {
+        return Err(StatusCodeError::new(1));
+    }
 }
 
 impl Write for Message {
@@ -478,6 +482,10 @@ impl Write for Message {
 
     #[inline(always)]
     fn flush(&mut self) -> std::io::Result<()> {
+        if self.bodybuf.is_none() {
+            return Ok(());
+        }
+
         let body = self.bodybuf.as_mut().unwrap();
         let result = body.flush();
         if self._compress_type.is_some() {

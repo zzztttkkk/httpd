@@ -4,19 +4,23 @@
 extern crate core;
 
 use std::io::Write;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::Duration;
 
+use bytebuffer::ByteBuffer;
 use clap::Parser;
 use tokio::io::{AsyncWriteExt, BufStream};
 use tokio::net::{TcpListener, TcpStream};
 
 use crate::config::Config;
-use crate::error::HTTPError;
+use crate::error::{HTTPError, StatusCodeError};
 use crate::fs::FsHandler;
 use crate::handler::Handler;
+use crate::request::Request;
 use crate::response::Response;
+use crate::router::Mux;
 
 mod error;
 mod router;
@@ -53,21 +57,29 @@ impl Drop for AliveCounter {
 
 async fn http11(stream: TcpStream, counter: Arc<AtomicI64>, cfg: Config) {
     let mut stream = Box::pin(BufStream::new(stream));
-    let mut buf = String::with_capacity(cfg.read_buf_cap);
-    let fsh = FsHandler::new("./", "/");
+    let mut rbuf = String::with_capacity(cfg.read_buf_cap);
+    let mut mux = Mux::new();
+
+    mux.register("/", func!({
+        println!("hello world!");
+        Ok(())
+    }));
+
+
+    mux.register("/static/httpd/source/", Box::new(FsHandler::new("./", "/static/httpd/source")));
 
     loop {
         tokio::select! {
-            r = request::from11(stream.as_mut(), &mut buf, &cfg) => {
+            r = request::from11(stream.as_mut(), &mut rbuf, &cfg) => {
                 match r {
                     Ok(mut req) => {
                         let _ = AliveCounter::new(counter.clone());
 
                         let mut resp = Response::default(&mut req);
 
-                        match fsh.handle(&mut req, &mut resp).await {
+                        match mux.handle(&mut req, &mut resp).await {
                             Ok(_) => {
-                                resp.to(stream.as_mut());
+                                resp.to11(stream.as_mut()).await;
                             }
                             Err(v) => {
                                 println!("[{}] Request: {} {}", chrono::Local::now(), req.method(), req.rawpath());
