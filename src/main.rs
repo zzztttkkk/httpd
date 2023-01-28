@@ -59,7 +59,6 @@ async fn http11(stream: TcpStream, counter: Arc<AtomicI64>, cfg: Config) {
 
     mux.register("/static/httpd/source/", FsHandler::new("./", "/static/httpd/source"));
     mux.register("/", func!(_, resp, {
-        let resp = resp.unwrap();
         let _ = resp.write("hello world!".repeat(50).as_bytes());
         Ok(())
     }));

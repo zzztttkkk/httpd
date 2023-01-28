@@ -1,5 +1,7 @@
 use core::fmt;
-use std::fmt::Formatter;
+use std::fmt::{format, Formatter};
+
+use once_cell::sync::Lazy;
 
 use crate::multi_value_map::MultiValuesMap;
 
@@ -217,20 +219,6 @@ impl ReadonlyUri {
     }
 }
 
-
-#[cfg(test)]
-mod tests {
-    use crate::uri::ReadonlyUri;
-
-    #[test]
-    fn safe_path() {
-        let mut v = ReadonlyUri::new("");
-        v._path = "~/../.\\\\./../././.a.r/key.txt/";
-        println!("{}", v.path());
-    }
-}
-
-
 pub struct Uri {
     pub scheme: String,
     pub username: String,
@@ -240,6 +228,40 @@ pub struct Uri {
     pub path: String,
     pub query: Option<MultiValuesMap>,
 }
+
+static ENCODE_TABLE: Lazy<[bool; 128]> = Lazy::new(|| {
+    let mut table: [bool; 128] = [false; 128];
+    for c in b'a'..=b'z' {
+        table[c as usize] = true;
+    }
+    for c in b'A'..=b'Z' {
+        table[c as usize] = true;
+    }
+    for c in b'0'..=b'9' {
+        table[c as usize] = true;
+    }
+    for c in "-_.!~*'();/?:@&=+$,#".as_bytes() {
+        table[(*c) as usize] = true;
+    }
+    table
+});
+
+static ENCODE_COMPONENT_TABLE: Lazy<[bool; 128]> = Lazy::new(|| {
+    let mut table: [bool; 128] = [false; 128];
+    for c in b'a'..=b'z' {
+        table[c as usize] = true;
+    }
+    for c in b'A'..=b'Z' {
+        table[c as usize] = true;
+    }
+    for c in b'0'..=b'9' {
+        table[c as usize] = true;
+    }
+    for c in "-_.!~*'()".as_bytes() {
+        table[(*c) as usize] = true;
+    }
+    table
+});
 
 impl Uri {
     pub fn new() -> Self {
@@ -253,5 +275,50 @@ impl Uri {
             query: None,
         }
     }
+
+    fn _encode_to(input: &[u8], output: &mut Vec<u8>, table: &'static Lazy<[bool; 128]>) {
+        for c in input {
+            let c = *c;
+            if c < 128 && table[c as usize] {
+                output.push(c);
+                continue;
+            }
+
+            output.push(b'%');
+            output.extend_from_slice(format!("{:X}", c).as_bytes());
+        }
+    }
+
+    pub fn encode_component_to(input: &[u8], output: &mut Vec<u8>) { Self::_encode_to(input, output, &ENCODE_TABLE); }
+
+    pub fn encode_to(input: &[u8], output: &mut Vec<u8>) { Self::_encode_to(input, output, &ENCODE_COMPONENT_TABLE); }
+
+    pub fn encode(input: &[u8]) -> String {
+        let mut txt = String::with_capacity((input.len() as f32 * 1.5) as usize);
+        unsafe { Self::encode_to(input, txt.as_mut_vec()) };
+        txt
+    }
+
+    pub fn encode_component(input: &[u8]) -> String {
+        let mut txt = String::with_capacity((input.len() as f32 * 1.5) as usize);
+        unsafe { Self::encode_component_to(input, txt.as_mut_vec()) };
+        txt
+    }
 }
 
+#[cfg(test)]
+mod tests {
+    use crate::uri::{ReadonlyUri, Uri};
+
+    #[test]
+    fn safe_path() {
+        let mut v = ReadonlyUri::new("");
+        v._path = "~/../.\\\\./../././.a.r/key.txt/";
+        println!("{}", v.path());
+    }
+
+    #[test]
+    fn uri_encode() {
+        println!("{}", Uri::encode("/我好".as_bytes()))
+    }
+}

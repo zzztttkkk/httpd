@@ -1,4 +1,5 @@
 use std::future::Future;
+use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
 
 use async_trait::async_trait;
@@ -14,20 +15,30 @@ pub trait Handler: Send {
     async fn handle(&mut self, req: &mut Request, resp: &mut Response) -> HandlerResult;
 }
 
-pub struct RequestWrapper(usize);
+macro_rules! impl_for_raw_ptr {
+    ($name:ident, $target:tt) => {
+        impl Deref for $name {
+            type Target = $target;
 
-impl RequestWrapper {
-    pub fn unwrap(&mut self) -> &mut Request { unsafe { std::mem::transmute(self.0) } }
+            fn deref(&self) -> &Self::Target { unsafe { std::mem::transmute(self.0) } }
+        }
+
+        impl DerefMut for $name {
+            fn deref_mut(&mut self) -> &mut Self::Target { unsafe { std::mem::transmute(self.0) } }
+        }
+    };
 }
 
-pub struct ResponseWrapper(usize);
+pub struct RequestRawPtr(usize);
 
-impl ResponseWrapper {
-    pub fn unwrap(&mut self) -> &mut Response { unsafe { std::mem::transmute(self.0) } }
-}
+impl_for_raw_ptr!(RequestRawPtr, Request);
+
+pub struct ResponseRawPtr(usize);
+
+impl_for_raw_ptr!(ResponseRawPtr, Response);
 
 type FnFutureType = Pin<Box<dyn Future<Output=HandlerResult> + Send>>;
-type FnType = Box<dyn (FnMut(RequestWrapper, ResponseWrapper) -> FnFutureType) + Send>;
+type FnType = Box<dyn (FnMut(RequestRawPtr, ResponseRawPtr) -> FnFutureType) + Send>;
 
 pub struct FuncHandler(FnType);
 
@@ -41,8 +52,8 @@ impl Handler for FuncHandler {
         unsafe {
             (
                 (self.0)(
-                    RequestWrapper(std::mem::transmute(req)),
-                    ResponseWrapper(std::mem::transmute(resp)),
+                    RequestRawPtr(std::mem::transmute(req)),
+                    ResponseRawPtr(std::mem::transmute(resp)),
                 )
             ).await
         }
