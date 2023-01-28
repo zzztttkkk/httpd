@@ -168,10 +168,10 @@ impl Headers {
     pub fn set_content_encoding(&mut self, compress_type: CompressType) {
         match compress_type {
             CompressType::Gzip => {
-                self.set("Content-Type", "gzip")
+                self.set("content-encoding", "gzip")
             }
             CompressType::Deflate => {
-                self.set("Content-Type", "deflate")
+                self.set("content-encoding", "deflate")
             }
         }
     }

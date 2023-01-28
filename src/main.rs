@@ -17,7 +17,7 @@ use tokio::net::{TcpListener, TcpStream};
 use crate::config::Config;
 use crate::error::{HTTPError, StatusCodeError};
 use crate::fs::FsHandler;
-use crate::handler::Handler;
+use crate::handler::{FuncHandler, Handler};
 use crate::request::Request;
 use crate::response::Response;
 use crate::router::Mux;
@@ -60,18 +60,17 @@ async fn http11(stream: TcpStream, counter: Arc<AtomicI64>, cfg: Config) {
     let mut rbuf = String::with_capacity(cfg.read_buf_cap);
     let mut mux = Mux::new();
 
-    mux.register("/", func!(_, _, {
-        println!("hello world!");
+    mux.register("/static/httpd/source/", FsHandler::new("./", "/static/httpd/source"));
+    mux.register("/", func!(req, resp, {
+        let mut resp = resp.unwrap();
+        resp.write("hello world!".repeat(50).as_bytes());
         Ok(())
     }));
 
-
-    mux.register("/static/httpd/source/", FsHandler::new("./", "/static/httpd/source"));
-
     loop {
         tokio::select! {
-            r = request::from11(stream.as_mut(), &mut rbuf, &cfg) => {
-                match r {
+            from_result = request::from11(stream.as_mut(), &mut rbuf, &cfg) => {
+                match from_result {
                     Ok(mut req) => {
                         let _ = AliveCounter::new(counter.clone());
 

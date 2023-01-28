@@ -1,9 +1,10 @@
 use std::future::Future;
+use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, MutexGuard};
 
 use crate::error::HTTPError;
 use crate::request::Request;
@@ -16,8 +17,20 @@ pub trait Handler: Send {
     async fn handle(&mut self, req: &mut Request, resp: &mut Response) -> HandlerResult;
 }
 
+pub struct RequestWrapper(usize);
+
+impl RequestWrapper {
+    pub fn unwrap(&mut self) -> &mut Request { unsafe { std::mem::transmute(self.0) } }
+}
+
+pub struct ResponseWrapper(usize);
+
+impl ResponseWrapper {
+    pub fn unwrap(&mut self) -> &mut Response { unsafe { std::mem::transmute(self.0) } }
+}
+
 type FnFutureType = Pin<Box<dyn Future<Output=HandlerResult> + Send>>;
-type FnType = Box<dyn (FnMut(&mut Request, &mut Response) -> FnFutureType) + Send>;
+type FnType = Box<dyn (FnMut(RequestWrapper, ResponseWrapper) -> FnFutureType) + Send>;
 
 pub struct FuncHandler(FnType);
 
@@ -28,8 +41,14 @@ impl FuncHandler {
 #[async_trait]
 impl Handler for FuncHandler {
     async fn handle(&mut self, req: &mut Request, resp: &mut Response) -> Result<(), Box<dyn HTTPError + Send>> {
-        self.0(req, resp).await;
-        Ok(())
+        unsafe {
+            (
+                (self.0)(
+                    RequestWrapper(std::mem::transmute(req)),
+                    ResponseWrapper(std::mem::transmute(resp)),
+                )
+            ).await
+        }
     }
 }
 
@@ -56,7 +75,7 @@ macro_rules! func {
     ($req:ident, _, $content:expr) => {
         $crate::handler::FuncHandler::new(
             Box::new(
-                move |$req, _| {
+                move |mut $req, _| {
                     Box::pin(async move { $content })
                 }
             )
@@ -65,7 +84,7 @@ macro_rules! func {
     (_, $resp:ident, $content:expr) => {
         $crate::handler::FuncHandler::new(
             Box::new(
-                move |_, $resp| {
+                move |_, mut $resp| {
                     Box::pin(async move { $content })
                 }
             )
@@ -74,7 +93,7 @@ macro_rules! func {
     ($req:ident, $resp:ident, $content:expr) => {
         $crate::handler::FuncHandler::new(
             Box::new(
-                move |$req, $resp| {
+                move |mut $req, mut $resp| {
                     Box::pin(async move { $content })
                 }
             )
