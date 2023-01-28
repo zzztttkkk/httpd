@@ -1,10 +1,7 @@
 use std::future::Future;
-use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
-use std::sync::Arc;
 
 use async_trait::async_trait;
-use tokio::sync::{Mutex, MutexGuard};
 
 use crate::error::HTTPError;
 use crate::request::Request;

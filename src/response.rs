@@ -1,17 +1,13 @@
-use std::borrow::{Borrow, BorrowMut};
 use std::collections::HashMap;
 use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use bytebuffer::ByteBuffer;
-use flate2::Compression;
 use tokio::io::AsyncWriteExt;
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::RwLock;
 
-use crate::compress::CompressType;
 use crate::headers::Headers;
-use crate::message::{BodyBuf, Message};
+use crate::message::Message;
 use crate::request::Request;
 
 pub struct Response {
@@ -66,8 +62,7 @@ pub async fn register_status_code(code: u32, reason: &str) {
 }
 
 async fn get_status_code_reason(code: u32) -> Option<&'static String> {
-    let begin = std::time::SystemTime::now();
-    unsafe { _REASONS_MAP_FREEZE_LOCK.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst); }
+    unsafe { let _ = _REASONS_MAP_FREEZE_LOCK.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst); }
 
     let rw = unsafe { get_reasons_map().await };
     let map = rw.read().await;
@@ -105,7 +100,7 @@ impl Response {
     pub fn headers(&mut self) -> &mut Headers { &mut self.msg.headers }
 
     async fn tomsg(&mut self) {
-        self.msg.flush();
+        let _ = self.msg.flush();
 
         if self._status_code == 0 {
             self._status_code = 200;
@@ -139,7 +134,6 @@ impl Write for Response {
 #[cfg(test)]
 mod tests {
     use std::io::Write;
-    use std::time::Duration;
 
     use crate::compress::CompressType;
     use crate::response::{get_reasons_map, get_status_code_reason, register_status_code, Response};

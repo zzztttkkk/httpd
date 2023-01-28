@@ -1,6 +1,5 @@
 use std::fmt::Formatter;
 use std::io::{Read, Write};
-use std::num::ParseIntError;
 
 use bytebuffer::ByteBuffer;
 use flate2::Compression;
@@ -177,7 +176,7 @@ impl std::fmt::Debug for BodyBuf {
 
 impl Drop for BodyBuf {
     fn drop(&mut self) {
-        self.finishcompress();
+        let _ = self.finishcompress();
     }
 }
 
@@ -301,7 +300,7 @@ impl Message {
                                                 msg.bodybuf = Some(BodyBuf::new(Some(bbuf)));
 
                                                 unsafe {
-                                                    let mut vec = buf.as_mut_vec();
+                                                    let vec = buf.as_mut_vec();
                                                     vec.resize(vec.capacity(), 0);
                                                 }
                                             }
@@ -366,7 +365,7 @@ impl Message {
                                     };
 
                                     unsafe {
-                                        let mut vec = buf.as_mut_vec();
+                                        let vec = buf.as_mut_vec();
                                         vec.resize(vec.capacity(), 0);
                                     }
 

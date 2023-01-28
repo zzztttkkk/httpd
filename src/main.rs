@@ -4,21 +4,18 @@
 extern crate core;
 
 use std::io::Write;
-use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::Duration;
 
-use bytebuffer::ByteBuffer;
 use clap::Parser;
 use tokio::io::{AsyncWriteExt, BufStream};
 use tokio::net::{TcpListener, TcpStream};
 
 use crate::config::Config;
-use crate::error::{HTTPError, StatusCodeError};
+use crate::error::HTTPError;
 use crate::fs::FsHandler;
-use crate::handler::{FuncHandler, Handler};
-use crate::request::Request;
+use crate::handler::Handler;
 use crate::response::Response;
 use crate::router::Mux;
 
@@ -61,9 +58,9 @@ async fn http11(stream: TcpStream, counter: Arc<AtomicI64>, cfg: Config) {
     let mut mux = Mux::new();
 
     mux.register("/static/httpd/source/", FsHandler::new("./", "/static/httpd/source"));
-    mux.register("/", func!(req, resp, {
-        let mut resp = resp.unwrap();
-        resp.write("hello world!".repeat(50).as_bytes());
+    mux.register("/", func!(_, resp, {
+        let resp = resp.unwrap();
+        let _ = resp.write("hello world!".repeat(50).as_bytes());
         Ok(())
     }));
 
@@ -78,7 +75,10 @@ async fn http11(stream: TcpStream, counter: Arc<AtomicI64>, cfg: Config) {
 
                         match mux.handle(&mut req, &mut resp).await {
                             Ok(_) => {
-                                resp.to11(stream.as_mut()).await;
+                                if let Err(e) = resp.to11(stream.as_mut()).await {
+                                    println!("[{}] Request: {} {}, Error: {}", chrono::Local::now(), req.method(), req.rawpath(), e);
+                                    break;
+                                }
                             }
                             Err(v) => {
                                 println!("[{}] Request: {} {}", chrono::Local::now(), req.method(), req.rawpath());
