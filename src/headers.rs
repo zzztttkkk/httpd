@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::compress::CompressType;
 use crate::multi_value_map::MultiValuesMap;
 
@@ -13,6 +15,17 @@ pub struct Headers {
 impl Headers {
     pub fn new() -> Self {
         Self { map: None, _content_length: None, _is_chunked: None, _compress_type: None }
+    }
+
+    pub fn map(&self) -> Option<&HashMap<String, Vec<String>>> {
+        match &self.map {
+            None => {
+                None
+            }
+            Some(map) => {
+                map.map()
+            }
+        }
     }
 
     pub fn append(&mut self, k: &str, v: &str) {
@@ -103,6 +116,8 @@ impl Headers {
             }
         }
     }
+
+    pub fn set_content_length(&mut self, len: usize) { self.set("content-length", len.to_string().as_str()) }
 
     pub fn content_type(&self) -> Option<&String> { self.get("content-type") }
 

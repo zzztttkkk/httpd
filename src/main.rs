@@ -60,13 +60,13 @@ async fn http11(stream: TcpStream, counter: Arc<AtomicI64>, cfg: Config) {
     let mut rbuf = String::with_capacity(cfg.read_buf_cap);
     let mut mux = Mux::new();
 
-    mux.register("/", func!({
+    mux.register("/", func!(_, _, {
         println!("hello world!");
         Ok(())
     }));
 
 
-    mux.register("/static/httpd/source/", Box::new(FsHandler::new("./", "/static/httpd/source")));
+    mux.register("/static/httpd/source/", FsHandler::new("./", "/static/httpd/source"));
 
     loop {
         tokio::select! {

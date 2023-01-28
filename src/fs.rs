@@ -14,11 +14,13 @@ pub struct FsHandler {
 }
 
 impl FsHandler {
-    pub fn new(root: &str, prefix: &str) -> Self {
-        Self {
-            root: root.to_string(),
-            prefix: prefix.to_string(),
-        }
+    pub fn new(root: &str, prefix: &str) -> Box<Self> {
+        Box::new(
+            Self {
+                root: root.to_string(),
+                prefix: prefix.to_string(),
+            }
+        )
     }
 }
 

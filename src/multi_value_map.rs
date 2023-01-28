@@ -6,6 +6,8 @@ pub struct MultiValuesMap(Option<HashMap<String, Vec<String>>>);
 impl MultiValuesMap {
     pub fn new() -> Self { Self(None) }
 
+    pub fn map(&self) -> Option<&HashMap<String, Vec<String>>> { self.0.as_ref() }
+
     pub fn append(&mut self, key: &str, val: &str) {
         match &mut self.0 {
             None => {

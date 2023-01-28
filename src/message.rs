@@ -190,6 +190,7 @@ pub struct Message {
     pub(crate) bodybuf: Option<BodyBuf>,
 
     pub(crate) _compress_type: Option<CompressType>,
+    pub(crate) _chunked: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -209,6 +210,7 @@ impl Message {
             headers: Headers::new(),
             bodybuf: None,
             _compress_type: None,
+            _chunked: false,
         }
     }
 
@@ -455,8 +457,45 @@ impl Message {
         }
     }
 
-    pub async fn to11<Writer: AsyncWriteExt + Unpin + Send>(&mut self, mut writer: Writer) -> Result<(), StatusCodeError> {
-        return Err(StatusCodeError::new(1));
+    fn body_buf_size(&self) -> usize {
+        match &self.bodybuf {
+            None => { 0 }
+            Some(buf) => {
+                match &buf.raw {
+                    None => { 0 }
+                    Some(buf) => { buf.len() }
+                }
+            }
+        }
+    }
+
+    pub async fn to11<Writer: AsyncWriteExt + Unpin + Send>(&mut self, mut writer: Writer) -> std::io::Result<()> {
+        (Writer::write(&mut writer, format!("HTTP/1.1 {} {}\r\n", self.f1, self.f2).as_bytes()).await)?;
+
+        let body_buf_size = self.body_buf_size();
+        if !self._chunked {
+            self.headers.set_content_length(body_buf_size);
+        }
+
+        if let Some(map) = self.headers.map() {
+            for (key, vals) in map {
+                for val in vals {
+                    (Writer::write(&mut writer, format!("{}: {}\r\n", key, val).as_bytes()).await)?;
+                }
+            }
+        }
+        (writer.write_u8(b'\r').await)?;
+        (writer.write_u8(b'\n').await)?;
+
+        if body_buf_size > 0 {
+            if self._chunked {
+                //todo
+            } else {
+                let buf = self.bodybuf.as_ref().unwrap().raw().unwrap();
+                (Writer::write(&mut writer, buf.as_bytes()).await)?;
+            }
+        }
+        Ok(())
     }
 }
 

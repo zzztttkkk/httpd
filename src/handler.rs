@@ -22,7 +22,7 @@ type FnType = Box<dyn (FnMut(&mut Request, &mut Response) -> FnFutureType) + Sen
 pub struct FuncHandler(FnType);
 
 impl FuncHandler {
-    pub(crate) fn new(f: FnType) -> Self { Self(f) }
+    pub(crate) fn new(f: FnType) -> Box<Self> { Box::new(Self(f)) }
 }
 
 #[async_trait]
@@ -36,46 +36,47 @@ impl Handler for FuncHandler {
 #[macro_export]
 macro_rules! func {
     ($content:expr) => {
-        std::boxed::Box::new(
-            $crate::handler::FuncHandler::new(
-                Box::new(
-                    move |_, _| {
-                        Box::pin(async move { $content })
-                    }
-                )
+        $crate::handler::FuncHandler::new(
+            Box::new(
+                move |_, _| {
+                    Box::pin(async move { $content })
+                }
+            )
+        )
+    };
+    (_, _, $content:expr) => {
+        $crate::handler::FuncHandler::new(
+            Box::new(
+                move |_, _| {
+                    Box::pin(async move { $content })
+                }
             )
         )
     };
     ($req:ident, _, $content:expr) => {
-        std::boxed::Box::new(
-            $crate::handler::FuncHandler::new(
-                Box::new(
-                    move |$req, _| {
-                        Box::pin(async move { $content })
-                    }
-                )
+        $crate::handler::FuncHandler::new(
+            Box::new(
+                move |$req, _| {
+                    Box::pin(async move { $content })
+                }
             )
         )
     };
     (_, $resp:ident, $content:expr) => {
-        std::boxed::Box::new(
-            $crate::handler::FuncHandler::new(
-                Box::new(
-                    move |_, $resp| {
-                        Box::pin(async move { $content })
-                    }
-                )
+        $crate::handler::FuncHandler::new(
+            Box::new(
+                move |_, $resp| {
+                    Box::pin(async move { $content })
+                }
             )
         )
     };
     ($req:ident, $resp:ident, $content:expr) => {
-        std::boxed::Box::new(
-            $crate::handler::FuncHandler::new(
-                Box::new(
-                    move |$req, $resp| {
-                        Box::pin(async move { $content })
-                    }
-                )
+        $crate::handler::FuncHandler::new(
+            Box::new(
+                move |$req, $resp| {
+                    Box::pin(async move { $content })
+                }
             )
         )
     };
