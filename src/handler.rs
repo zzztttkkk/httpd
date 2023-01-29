@@ -8,10 +8,10 @@ use crate::error::HTTPError;
 use crate::request::Request;
 use crate::response::Response;
 
-type HandlerResult = Result<(), Box<dyn HTTPError + Send>>;
+pub type HandlerResult = Result<(), Box<dyn HTTPError + Send>>;
 
 #[async_trait]
-pub trait Handler: Send {
+pub trait Handler: Send + Sync {
     async fn handle(&mut self, req: &mut Request, resp: &mut Response) -> HandlerResult;
 }
 
@@ -42,7 +42,7 @@ pub struct ResponseRawPtr(usize);
 impl_for_raw_ptr!(ResponseRawPtr, Response);
 
 type FnFutureType = Pin<Box<dyn Future<Output = HandlerResult> + Send>>;
-type FnType = Box<dyn (FnMut(RequestRawPtr, ResponseRawPtr) -> FnFutureType) + Send>;
+type FnType = Box<dyn (FnMut(RequestRawPtr, ResponseRawPtr) -> FnFutureType) + Send + Sync>;
 
 pub struct FuncHandler(FnType);
 

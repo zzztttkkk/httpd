@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 
 use crate::error::HTTPError;
-use crate::handler::Handler;
+use crate::handler::{Handler, HandlerResult};
 use crate::request::Request;
 use crate::response::Response;
 
@@ -25,13 +25,12 @@ impl Mux {
     }
 }
 
+unsafe impl Send for Mux {}
+unsafe impl Sync for Mux {}
+
 #[async_trait]
 impl Handler for Mux {
-    async fn handle(
-        &mut self,
-        req: &mut Request,
-        resp: &mut Response,
-    ) -> Result<(), Box<dyn HTTPError + Send>> {
+    async fn handle(&mut self, req: &mut Request, resp: &mut Response) -> HandlerResult {
         let mut tmp = req.uri().path().as_str();
 
         loop {

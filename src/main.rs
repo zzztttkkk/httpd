@@ -10,6 +10,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use clap::Parser;
+use once_cell::sync::Lazy;
 use tokio::io::{AsyncWriteExt, BufStream};
 use tokio::net::{TcpListener, TcpStream};
 
@@ -17,8 +18,8 @@ use crate::config::Config;
 use crate::error::HTTPError;
 use crate::fs::FsHandler;
 use crate::handler::Handler;
+use crate::mux::Mux;
 use crate::response::Response;
-use crate::router::Mux;
 
 mod compress;
 mod config;
@@ -28,9 +29,9 @@ mod handler;
 mod headers;
 mod message;
 mod multi_values_map;
+mod mux;
 mod request;
 mod response;
-mod router;
 mod uri;
 
 struct AliveCounter {
@@ -50,25 +51,14 @@ impl Drop for AliveCounter {
     }
 }
 
-async fn http11(stream: TcpStream, counter: Arc<AtomicI64>, cfg: Config) {
+async fn http11(
+    stream: TcpStream,
+    counter: Arc<AtomicI64>,
+    cfg: Config,
+    mut handler: Box<dyn Handler>,
+) {
     let mut stream = Box::pin(BufStream::new(stream));
     let mut rbuf = String::with_capacity(cfg.read_buf_cap);
-    let mut mux = Mux::new();
-
-    mux.register(
-        "/static/httpd/source/",
-        FsHandler::new("./", "/static/httpd/source"),
-    );
-    mux.register(
-        "/",
-        func!(req, resp, {
-            let _ = resp.write("hello world!".repeat(50).as_bytes());
-            if req.uri().path().len() != 1 {
-                resp.headers().append("Raw-Path", req.uri().path().as_str());
-            }
-            Ok(())
-        }),
-    );
 
     loop {
         tokio::select! {
@@ -79,7 +69,7 @@ async fn http11(stream: TcpStream, counter: Arc<AtomicI64>, cfg: Config) {
 
                         let mut resp = Response::default(&mut req);
 
-                        match mux.handle(&mut req, &mut resp).await {
+                        match handler.handle(&mut req, &mut resp).await {
                             Ok(_) => {
                                 if let Err(e) = resp.to11(stream.as_mut()).await {
                                     println!("[{}] Request: {} {}, Error: {}", chrono::Local::now(), req.method(), req.rawpath(), e);
@@ -111,12 +101,32 @@ async fn http11(stream: TcpStream, counter: Arc<AtomicI64>, cfg: Config) {
     }
 }
 
+fn init_mux(mux: &mut Mux) {
+    mux.register(
+        "/static/httpd/source/",
+        FsHandler::new("./", "/static/httpd/source"),
+    );
+    mux.register(
+        "/",
+        func!(req, resp, {
+            let _ = resp.write("hello world!".repeat(50).as_bytes());
+            if req.uri().path().len() != 1 {
+                resp.headers().append("Raw-Path", req.uri().path().as_str());
+            }
+            Ok(())
+        }),
+    );
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::parse();
 
     let listener = TcpListener::bind(&config.addr).await.unwrap();
     let alive_counter: Arc<AtomicI64> = Arc::new(AtomicI64::new(0));
+    let mut mux = Mux::new();
+    init_mux(&mut mux);
+    let mux_ptr: usize = unsafe { std::mem::transmute(&mux) };
 
     println!(
         "[{}] httpd listening @ {}, Pid: {}",
@@ -136,7 +146,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let counter = alive_counter.clone();
                         let cfg = config.clone();
                         tokio::spawn(async move {
-                            http11(stream, counter, cfg).await;
+                            http11(stream, counter, cfg, func!(req, resp, {
+                                let result = unsafe {
+                                    let mux: &mut Mux = std::mem::transmute(mux_ptr);
+                                    mux.handle(&mut *req, &mut *resp).await
+                                };
+                                result
+                            })).await;
                         });
                     }
                 }
