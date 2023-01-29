@@ -7,7 +7,7 @@ use crate::message::{BodyBuf, Message};
 use crate::uri::ReadonlyUri;
 
 pub struct Request {
-    msg: Message,
+    msg: Box<Message>,
     uri: Option<ReadonlyUri>,
 }
 
@@ -50,9 +50,9 @@ pub async fn from11<Reader: AsyncBufReadExt + Unpin + Send>(
     reader: Reader,
     buf: &mut String,
     cfg: &Config,
-) -> Result<Request, StatusCodeError> {
+) -> Result<Box<Request>, StatusCodeError> {
     return match Message::from11(reader, buf, cfg).await {
-        Ok(msg) => Ok(Request { msg, uri: None }),
+        Ok(msg) => Ok(Box::new(Request { msg, uri: None })),
         Err(e) => Err(e),
     };
 }

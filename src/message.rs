@@ -218,9 +218,9 @@ impl Message {
         mut reader: Reader,
         buf: &mut String,
         cfg: &Config,
-    ) -> Result<Self, StatusCodeError> {
+    ) -> Result<Box<Self>, StatusCodeError> {
         let mut status = ReadStatus::None;
-        let mut msg = Message::new();
+        let mut msg = Box::new(Message::new());
 
         let mut body_remains: i64 = 0;
         let mut is_chunked = false;

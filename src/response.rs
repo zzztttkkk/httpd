@@ -147,8 +147,8 @@ impl Response {
         }
     }
 
-    pub fn default(req: &mut Request) -> Self {
-        let mut resp = Self::new();
+    pub fn default(req: &mut Request) -> Box<Self> {
+        let mut resp = Box::new(Self::new());
         resp.msg._compress_type = req.headers().compress_type("accept-encoding");
         resp
     }
