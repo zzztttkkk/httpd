@@ -288,28 +288,20 @@ impl Message {
                             }
 
                             if line_size == 2 {
-                                match msg.headers.content_length() {
-                                    None => {}
-                                    Some(cl) => {
-                                        if cl < 0 {
-                                            if !msg.headers.ischunked() {
-                                                return Err(StatusCodeError::new(0));
-                                            }
-                                            is_chunked = true;
-                                            msg.bodybuf =
-                                                Some(BodyBuf::new(Some(ByteBuffer::new())));
-                                        } else {
-                                            body_remains = cl;
-                                            if body_remains > 0 {
-                                                let mut bbuf = ByteBuffer::new();
-                                                bbuf.resize(body_remains as usize);
-                                                msg.bodybuf = Some(BodyBuf::new(Some(bbuf)));
+                                if msg.headers.ischunked() {
+                                    is_chunked = true;
+                                    msg.bodybuf = Some(BodyBuf::new(Some(ByteBuffer::new())));
+                                } else {
+                                    let cl = msg.headers.content_length();
+                                    if cl > 0 {
+                                        body_remains = cl as i64;
+                                        let mut bbuf = ByteBuffer::new();
+                                        bbuf.resize(body_remains as usize);
+                                        msg.bodybuf = Some(BodyBuf::new(Some(bbuf)));
 
-                                                unsafe {
-                                                    let vec = buf.as_mut_vec();
-                                                    vec.resize(vec.capacity(), 0);
-                                                }
-                                            }
+                                        unsafe {
+                                            let vec = buf.as_mut_vec();
+                                            vec.resize(vec.capacity(), 0);
                                         }
                                     }
                                 }

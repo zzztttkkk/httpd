@@ -7,7 +7,7 @@ use crate::multi_values_map::MultiValuesMap;
 pub struct Headers {
     map: Option<MultiValuesMap>,
 
-    _content_length: Option<i64>,
+    _content_length: Option<usize>,
     _is_chunked: Option<bool>,
     _compress_type: Option<Option<CompressType>>,
 }
@@ -98,27 +98,27 @@ impl Headers {
         }
     }
 
-    pub fn content_length(&mut self) -> Option<i64> {
+    pub fn content_length(&mut self) -> usize {
         match &mut self._content_length {
             None => {
-                let l: i64;
+                let l: usize;
                 match self.get("content-length") {
                     None => {
-                        l = -1;
+                        l = 0;
                     }
                     Some(s) => match s.parse::<usize>() {
                         Ok(v) => {
-                            l = v as i64;
+                            l = v;
                         }
                         Err(_) => {
-                            l = -1;
+                            l = 0;
                         }
                     },
                 }
                 self._content_length = Some(l);
-                Some(l)
+                l
             }
-            Some(v) => Some(*v),
+            Some(v) => *v,
         }
     }
 

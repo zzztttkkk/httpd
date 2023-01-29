@@ -142,7 +142,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Err(_) => {
                         continue;
                     }
-                    Ok((stream, _)) => {
+                    Ok((stream, addr)) => {
                         let counter = alive_counter.clone();
                         let cfg = config.clone();
                         tokio::spawn(async move {
