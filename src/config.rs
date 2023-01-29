@@ -26,7 +26,12 @@ pub struct Config {
 
 impl Config {
     pub fn new() -> Self {
-        Self { addr: "".to_string(), file: None, max_body_size: 0, read_buf_cap: 0, max_header_line_size: 0 }
+        Self {
+            addr: "".to_string(),
+            file: None,
+            max_body_size: 0,
+            read_buf_cap: 0,
+            max_header_line_size: 0,
+        }
     }
 }
-

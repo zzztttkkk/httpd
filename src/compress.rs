@@ -20,23 +20,29 @@ pub struct Deflate<W: Write> {
 
 macro_rules! impl_compress_encoder {
     ($name:ty, $make:expr) => {
-        impl <W> $name where W: Write {
+        impl<W> $name
+        where
+            W: Write,
+        {
             #[inline(always)]
             pub fn new(w: W) -> Self {
-                Self{
+                Self {
                     raw: $make(w, flate2::Compression::default()),
                 }
             }
 
             #[inline(always)]
             pub fn with_level(w: W, level: flate2::Compression) -> Self {
-                Self{
+                Self {
                     raw: $make(w, level),
                 }
             }
         }
 
-        impl <W> Write for $name where W: Write {
+        impl<W> Write for $name
+        where
+            W: Write,
+        {
             #[inline(always)]
             fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
                 self.raw.write(buf)
@@ -48,7 +54,10 @@ macro_rules! impl_compress_encoder {
             }
         }
 
-        impl<W> $crate::compress::CompressWriter for $name where W: Write {
+        impl<W> $crate::compress::CompressWriter for $name
+        where
+            W: Write,
+        {
             #[inline(always)]
             fn finish(&mut self) -> std::io::Result<()> {
                 self.raw.try_finish()

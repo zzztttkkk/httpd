@@ -19,9 +19,7 @@ unsafe impl Send for ByteBufferWrapper {}
 impl ByteBufferWrapper {
     #[inline(always)]
     fn bufref(&mut self) -> &mut ByteBuffer {
-        unsafe {
-            self.ptr.as_mut().unwrap().as_mut().unwrap()
-        }
+        unsafe { self.ptr.as_mut().unwrap().as_mut().unwrap() }
     }
 }
 
@@ -70,10 +68,14 @@ impl BodyBuf {
     pub fn decompress(&mut self, ct: CompressType) {
         match ct {
             CompressType::Gzip => {
-                self.decoder = Some(Box::new(flate2::read::GzDecoder::new(ByteBufferWrapper { ptr: &mut self.raw })));
+                self.decoder = Some(Box::new(flate2::read::GzDecoder::new(ByteBufferWrapper {
+                    ptr: &mut self.raw,
+                })));
             }
             CompressType::Deflate => {
-                self.decoder = Some(Box::new(flate2::read::DeflateDecoder::new(ByteBufferWrapper { ptr: &mut self.raw })));
+                self.decoder = Some(Box::new(flate2::read::DeflateDecoder::new(
+                    ByteBufferWrapper { ptr: &mut self.raw },
+                )));
             }
         }
     }
@@ -82,10 +84,16 @@ impl BodyBuf {
     pub fn begincompress(&mut self, ct: CompressType, level: flate2::Compression) {
         match ct {
             CompressType::Gzip => {
-                self.encoder = Some(Box::new(Gzip::with_level(ByteBufferWrapper { ptr: &mut self.raw }, level)));
+                self.encoder = Some(Box::new(Gzip::with_level(
+                    ByteBufferWrapper { ptr: &mut self.raw },
+                    level,
+                )));
             }
             CompressType::Deflate => {
-                self.encoder = Some(Box::new(Deflate::with_level(ByteBufferWrapper { ptr: &mut self.raw }, level)));
+                self.encoder = Some(Box::new(Deflate::with_level(
+                    ByteBufferWrapper { ptr: &mut self.raw },
+                    level,
+                )));
             }
         }
     }
@@ -98,28 +106,22 @@ impl BodyBuf {
         self._encoder_finished = true;
 
         match &mut self.encoder {
-            None => {
-                Ok(())
-            }
-            Some(encoder) => {
-                encoder.finish()
-            }
+            None => Ok(()),
+            Some(encoder) => encoder.finish(),
         }
     }
 
-    pub fn raw(&self) -> Option<&ByteBuffer> { self.raw.as_ref() }
+    pub fn raw(&self) -> Option<&ByteBuffer> {
+        self.raw.as_ref()
+    }
 }
 
 impl Read for BodyBuf {
     #[inline(always)]
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         match &mut self.decoder {
-            None => {
-                self.raw.as_mut().unwrap().read(buf)
-            }
-            Some(decoder) => {
-                decoder.read(buf)
-            }
+            None => self.raw.as_mut().unwrap().read(buf),
+            Some(decoder) => decoder.read(buf),
         }
     }
 }
@@ -128,24 +130,16 @@ impl Write for BodyBuf {
     #[inline(always)]
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         match &mut self.encoder {
-            None => {
-                self.raw.as_mut().unwrap().write(buf)
-            }
-            Some(encoder) => {
-                encoder.write(buf)
-            }
+            None => self.raw.as_mut().unwrap().write(buf),
+            Some(encoder) => encoder.write(buf),
         }
     }
 
     #[inline(always)]
     fn flush(&mut self) -> std::io::Result<()> {
         match &mut self.encoder {
-            None => {
-                self.raw.as_mut().unwrap().flush()
-            }
-            Some(encoder) => {
-                encoder.flush()
-            }
+            None => self.raw.as_mut().unwrap().flush(),
+            Some(encoder) => encoder.flush(),
         }
     }
 }
@@ -158,7 +152,14 @@ impl std::fmt::Debug for BodyBuf {
                 write!(f, " len:0").unwrap();
             }
             Some(v) => {
-                write!(f, " len:{}, rpos:{}, wpos:{}", v.len(), v.get_rpos(), v.get_wpos()).unwrap();
+                write!(
+                    f,
+                    " len:{}, rpos:{}, wpos:{}",
+                    v.len(),
+                    v.get_rpos(),
+                    v.get_wpos()
+                )
+                .unwrap();
             }
         }
 
@@ -213,7 +214,11 @@ impl Message {
         }
     }
 
-    pub async fn from11<Reader: AsyncBufReadExt + Unpin + Send>(mut reader: Reader, buf: &mut String, cfg: &Config) -> Result<Self, StatusCodeError> {
+    pub async fn from11<Reader: AsyncBufReadExt + Unpin + Send>(
+        mut reader: Reader,
+        buf: &mut String,
+        cfg: &Config,
+    ) -> Result<Self, StatusCodeError> {
         let mut status = ReadStatus::None;
         let mut msg = Message::new();
 
@@ -291,7 +296,8 @@ impl Message {
                                                 return Err(StatusCodeError::new(0));
                                             }
                                             is_chunked = true;
-                                            msg.bodybuf = Some(BodyBuf::new(Some(ByteBuffer::new())));
+                                            msg.bodybuf =
+                                                Some(BodyBuf::new(Some(ByteBuffer::new())));
                                         } else {
                                             body_remains = cl;
                                             if body_remains > 0 {
@@ -320,9 +326,7 @@ impl Message {
                                 None => {
                                     return Err(StatusCodeError::new(0));
                                 }
-                                Some(v) => {
-                                    v
-                                }
+                                Some(v) => v,
                             };
 
                             match parts.next() {
@@ -356,13 +360,14 @@ impl Message {
                                         break;
                                     }
 
-                                    let mut remain_chunk_size = match buf.as_str()[0..line_size - 2].parse::<usize>() {
-                                        Ok(v) => { v }
-                                        Err(e) => {
-                                            println!("ParseChunkSizeFailed: {:?}", e);
-                                            return Err(StatusCodeError::new(0));
-                                        }
-                                    };
+                                    let mut remain_chunk_size =
+                                        match buf.as_str()[0..line_size - 2].parse::<usize>() {
+                                            Ok(v) => v,
+                                            Err(e) => {
+                                                println!("ParseChunkSizeFailed: {:?}", e);
+                                                return Err(StatusCodeError::new(0));
+                                            }
+                                        };
 
                                     unsafe {
                                         let vec = buf.as_mut_vec();
@@ -381,7 +386,10 @@ impl Message {
                                                     return Err(StatusCodeError::new(0));
                                                 }
 
-                                                msg.bodybuf.as_mut().unwrap().writeraw(&bytes[0..rbs]);
+                                                msg.bodybuf
+                                                    .as_mut()
+                                                    .unwrap()
+                                                    .writeraw(&bytes[0..rbs]);
 
                                                 if remain_chunk_size <= rbs {
                                                     break;
@@ -458,18 +466,23 @@ impl Message {
 
     fn body_buf_size(&self) -> usize {
         match &self.bodybuf {
-            None => { 0 }
-            Some(buf) => {
-                match &buf.raw {
-                    None => { 0 }
-                    Some(buf) => { buf.len() }
-                }
-            }
+            None => 0,
+            Some(buf) => match &buf.raw {
+                None => 0,
+                Some(buf) => buf.len(),
+            },
         }
     }
 
-    pub async fn to11<Writer: AsyncWriteExt + Unpin + Send>(&mut self, mut writer: Writer) -> std::io::Result<()> {
-        (Writer::write(&mut writer, format!("HTTP/1.1 {} {}\r\n", self.f1, self.f2).as_bytes()).await)?;
+    pub async fn to11<Writer: AsyncWriteExt + Unpin + Send>(
+        &mut self,
+        mut writer: Writer,
+    ) -> std::io::Result<()> {
+        (Writer::write(
+            &mut writer,
+            format!("HTTP/1.1 {} {}\r\n", self.f1, self.f2).as_bytes(),
+        )
+        .await)?;
 
         let body_buf_size = self.body_buf_size();
         if !self._chunked {

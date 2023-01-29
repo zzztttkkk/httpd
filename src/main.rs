@@ -4,8 +4,9 @@
 extern crate core;
 
 use std::io::Write;
-use std::sync::Arc;
+use std::ops::DerefMut;
 use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use clap::Parser;
@@ -19,18 +20,18 @@ use crate::handler::Handler;
 use crate::response::Response;
 use crate::router::Mux;
 
-mod error;
-mod router;
-mod request;
-mod headers;
-mod response;
-mod handler;
 mod compress;
-mod message;
 mod config;
+mod error;
 mod fs;
+mod handler;
+mod headers;
+mod message;
+mod multi_values_map;
+mod request;
+mod response;
+mod router;
 mod uri;
-mod multi_value_map;
 
 struct AliveCounter {
     counter: Arc<AtomicI64>,
@@ -39,9 +40,7 @@ struct AliveCounter {
 impl AliveCounter {
     fn new(counter: Arc<AtomicI64>) -> Self {
         counter.fetch_add(1, Ordering::Relaxed);
-        Self {
-            counter
-        }
+        Self { counter }
     }
 }
 
@@ -51,17 +50,25 @@ impl Drop for AliveCounter {
     }
 }
 
-
 async fn http11(stream: TcpStream, counter: Arc<AtomicI64>, cfg: Config) {
     let mut stream = Box::pin(BufStream::new(stream));
     let mut rbuf = String::with_capacity(cfg.read_buf_cap);
     let mut mux = Mux::new();
 
-    mux.register("/static/httpd/source/", FsHandler::new("./", "/static/httpd/source"));
-    mux.register("/", func!(_, resp, {
-        let _ = resp.write("hello world!".repeat(50).as_bytes());
-        Ok(())
-    }));
+    mux.register(
+        "/static/httpd/source/",
+        FsHandler::new("./", "/static/httpd/source"),
+    );
+    mux.register(
+        "/",
+        func!(req, resp, {
+            let _ = resp.write("hello world!".repeat(50).as_bytes());
+            if req.uri().path().len() != 1 {
+                resp.headers().append("Raw-Path", req.uri().path().as_str());
+            }
+            Ok(())
+        }),
+    );
 
     loop {
         tokio::select! {
@@ -111,7 +118,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let listener = TcpListener::bind(&config.addr).await.unwrap();
     let alive_counter: Arc<AtomicI64> = Arc::new(AtomicI64::new(0));
 
-    println!("[{}] httpd listening @ {}, Pid: {}", chrono::Local::now(), &config.addr, std::process::id());
+    println!(
+        "[{}] httpd listening @ {}, Pid: {}",
+        chrono::Local::now(),
+        &config.addr,
+        std::process::id()
+    );
 
     loop {
         tokio::select! {

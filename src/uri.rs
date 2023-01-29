@@ -3,7 +3,7 @@ use std::fmt::{format, Formatter};
 
 use once_cell::sync::Lazy;
 
-use crate::multi_value_map::MultiValuesMap;
+use crate::multi_values_map::MultiValuesMap;
 
 /// UNSAFE!!!!!!!!!!!!!!!!!
 pub struct ReadonlyUri {
@@ -31,7 +31,12 @@ impl fmt::Debug for ReadonlyUri {
         if !self._parsed {
             return write!(f, "Uri(unparsed){{raw: `{}`}}", unsafe { &*self._raw });
         }
-        write!(f, "Uri{{raw: `{}`, path: `{}`}}", unsafe { &*self._raw }, unsafe { &*self._path })
+        write!(
+            f,
+            "Uri{{raw: `{}`, path: `{}`}}",
+            unsafe { &*self._raw },
+            unsafe { &*self._path }
+        )
     }
 }
 
@@ -41,7 +46,7 @@ macro_rules! make_uri_getter {
             if !self._parsed {
                 self.parse();
             }
-            unsafe{ &*self.$field }
+            unsafe { &*self.$field }
         }
     };
 }
@@ -81,8 +86,14 @@ impl ReadonlyUri {
             }
 
             let raw_path = unsafe { &*self._path };
-            let tmp = raw_path.replace('~', "").replace('\\', "/").replace("..", ".");
-            let parts = tmp.split('/').map(|v| v.trim()).filter(|&v| !v.is_empty() && v != ".");
+            let tmp = raw_path
+                .replace('~', "")
+                .replace('\\', "/")
+                .replace("..", ".");
+            let parts = tmp
+                .split('/')
+                .map(|v| v.trim())
+                .filter(|&v| !v.is_empty() && v != ".");
 
             let mut result = String::new();
 
@@ -289,9 +300,13 @@ impl Uri {
         }
     }
 
-    pub fn encode_component_to(input: &[u8], output: &mut Vec<u8>) { Self::_encode_to(input, output, &ENCODE_TABLE); }
+    pub fn encode_component_to(input: &[u8], output: &mut Vec<u8>) {
+        Self::_encode_to(input, output, &ENCODE_TABLE);
+    }
 
-    pub fn encode_to(input: &[u8], output: &mut Vec<u8>) { Self::_encode_to(input, output, &ENCODE_COMPONENT_TABLE); }
+    pub fn encode_to(input: &[u8], output: &mut Vec<u8>) {
+        Self::_encode_to(input, output, &ENCODE_COMPONENT_TABLE);
+    }
 
     pub fn encode(input: &[u8]) -> String {
         let mut txt = String::with_capacity((input.len() as f32 * 1.5) as usize);

@@ -27,7 +27,11 @@ impl Mux {
 
 #[async_trait]
 impl Handler for Mux {
-    async fn handle(&mut self, req: &mut Request, resp: &mut Response) -> Result<(), Box<dyn HTTPError + Send>> {
+    async fn handle(
+        &mut self,
+        req: &mut Request,
+        resp: &mut Response,
+    ) -> Result<(), Box<dyn HTTPError + Send>> {
         let mut tmp = req.uri().path().as_str();
 
         loop {
@@ -37,10 +41,13 @@ impl Handler for Mux {
 
             match self.map.get_mut(tmp) {
                 None => {
+                    if tmp.len() == 1 {
+                        break;
+                    }
                     match tmp.rfind('/') {
                         None => {}
                         Some(idx) => {
-                            tmp = &(tmp[0..idx]);
+                            tmp = &(tmp[0..idx + 1]);
                         }
                     }
                 }
@@ -55,9 +62,7 @@ impl Handler for Mux {
                 resp._status_code = 404;
                 Ok(())
             }
-            Some(func) => {
-                func.handle(req, resp).await
-            }
-        }
+            Some(func) => func.handle(req, resp).await,
+        };
     }
 }

@@ -9,9 +9,13 @@ pub trait HTTPError: std::error::Error {
 pub struct StatusCodeError(i32);
 
 impl StatusCodeError {
-    pub fn new(code: i32) -> Self { Self(code) }
+    pub fn new(code: i32) -> Self {
+        Self(code)
+    }
 
-    pub fn ok() -> Self { Self(200) }
+    pub fn ok() -> Self {
+        Self(200)
+    }
 }
 
 impl Error for StatusCodeError {}
@@ -23,6 +27,7 @@ impl Display for StatusCodeError {
 }
 
 impl HTTPError for StatusCodeError {
-    fn statuscode(&self) -> i32 { self.0 }
+    fn statuscode(&self) -> i32 {
+        self.0
+    }
 }
-

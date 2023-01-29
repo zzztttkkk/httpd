@@ -13,13 +13,19 @@ pub struct Request {
 
 impl Request {
     #[inline(always)]
-    pub fn method(&self) -> &str { self.msg.f0.as_str() }
+    pub fn method(&self) -> &str {
+        self.msg.f0.as_str()
+    }
 
     #[inline(always)]
-    pub fn rawpath(&self) -> &str { self.msg.f1.as_str() }
+    pub fn rawpath(&self) -> &str {
+        self.msg.f1.as_str()
+    }
 
     #[inline(always)]
-    pub fn protoversion(&self) -> &str { self.msg.f2.as_str() }
+    pub fn protoversion(&self) -> &str {
+        self.msg.f2.as_str()
+    }
 
     #[inline(always)]
     pub fn uri(&mut self) -> &mut ReadonlyUri {
@@ -30,20 +36,23 @@ impl Request {
     }
 
     #[inline(always)]
-    pub fn headers(&mut self) -> &mut Headers { &mut self.msg.headers }
+    pub fn headers(&mut self) -> &mut Headers {
+        &mut self.msg.headers
+    }
 
     #[inline(always)]
-    pub fn body(&mut self) -> Option<&mut BodyBuf> { self.msg.bodybuf.as_mut() }
+    pub fn body(&mut self) -> Option<&mut BodyBuf> {
+        self.msg.bodybuf.as_mut()
+    }
 }
 
-
-pub async fn from11<Reader: AsyncBufReadExt + Unpin + Send>(reader: Reader, buf: &mut String, cfg: &Config) -> Result<Request, StatusCodeError> {
+pub async fn from11<Reader: AsyncBufReadExt + Unpin + Send>(
+    reader: Reader,
+    buf: &mut String,
+    cfg: &Config,
+) -> Result<Request, StatusCodeError> {
     return match Message::from11(reader, buf, cfg).await {
-        Ok(msg) => {
-            Ok(Request { msg, uri: None })
-        }
-        Err(e) => {
-            Err(e)
-        }
-    }
+        Ok(msg) => Ok(Request { msg, uri: None }),
+        Err(e) => Err(e),
+    };
 }
