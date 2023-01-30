@@ -4,7 +4,7 @@ use async_trait::async_trait;
 
 use crate::context::Context;
 use crate::error::HTTPError;
-use crate::handler::{Handler, HandlerResult};
+use crate::handler::Handler;
 use crate::middleware::Middleware;
 use crate::request::Request;
 use crate::response::Response;
@@ -38,8 +38,8 @@ unsafe impl Sync for UnsafeMux {}
 
 #[async_trait]
 impl Handler for UnsafeMux {
-    async fn handle(&mut self, ctx: &mut Context) -> HandlerResult {
-        let mut tmp = ctx.request().uri().path().as_str();
+    async fn handle(&mut self, ctx: &mut Context) {
+        let mut tmp: &str = unsafe { std::mem::transmute(ctx.request().uri().path().as_str()) };
 
         loop {
             if tmp.is_empty() {
@@ -59,41 +59,38 @@ impl Handler for UnsafeMux {
                     }
                 }
                 Some(handler) => {
+                    let sync = ctx.sync();
+
                     for m in &mut self.middleware {
-                        match m.pre(ctx).await {
-                            Ok(_) => {}
-                            Err(e) => {
-                                return Err(e);
-                            }
+                        m.pre(ctx).await;
+                        let _r = sync.read().await;
+                        if ctx._pre_stop {
+                            break;
                         }
                     }
 
-                    match handler.handle(ctx).await {
-                        Ok(()) => {}
-                        Err(e) => {
-                            return Err(e);
+                    handler.handle(ctx).await;
+
+                    for m in &mut self.middleware {
+                        m.post(ctx).await;
+                        let _r = sync.read().await;
+                        if ctx._post_stop {
+                            break;
                         }
                     }
 
-                    for m in &mut self.middleware {
-                        match m.post(ctx).await {
-                            Ok(_) => {}
-                            Err(e) => {
-                                return Err(e);
-                            }
-                        }
-                    }
-                    return Ok(());
+                    return;
                 }
             }
         }
 
-        return match &mut self.not_found {
+        match &mut self.not_found {
             None => {
                 ctx.response()._status_code = 404;
-                Ok(())
             }
-            Some(func) => func.handle(ctx).await,
+            Some(func) => {
+                func.handle(ctx).await;
+            }
         };
     }
 }

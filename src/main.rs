@@ -4,14 +4,12 @@
 extern crate core;
 
 use std::io::Write;
-use std::ops::DerefMut;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
 use clap::Parser;
 use middleware::FuncMiddleware;
-use once_cell::sync::Lazy;
 use tokio::io::{AsyncWriteExt, BufStream};
 use tokio::net::{TcpListener, TcpStream};
 
@@ -74,22 +72,17 @@ async fn http11(
 
                         let mut resp = Response::default(&mut req);
 
-                        let mut ctx = Context::new(unsafe{std::mem::transmute(&mut req)}, unsafe{std::mem::transmute(&mut resp)});
+                        let mut ctx = Context::new(
+                            unsafe{std::mem::transmute(req.as_mut())},
+                            unsafe{std::mem::transmute(resp.as_mut())}
+                        );
 
-                        match handler.handle(&mut ctx).await {
-                            Ok(_) => {
-                                if let Err(e) = resp.to11(stream.as_mut()).await {
-                                    println!("[{}] Request: {} {}, Error: {}", chrono::Local::now(), req.method(), req.rawpath(), e);
-                                    break;
-                                }
-                            }
-                            Err(v) => {
-                                println!("[{}] Request: {} {}", chrono::Local::now(), req.method(), req.rawpath());
-                                let _ = stream.write(format!("HTTP/1.0 {} OK\r\nContent-Length: 12\r\n\r\nHello World!", v.statuscode()).as_bytes()).await;
-                            }
+                        handler.handle(&mut ctx).await;
+
+                        let _ = resp.to11(stream.as_mut()).await;
+                        if let Err(_) = (stream.flush().await) {
+                            return ;
                         };
-
-                        let _ = stream.flush().await;
                     }
                     Err(e) => {
                         let code = e.statuscode();
@@ -112,8 +105,25 @@ fn new_mux() -> UnsafeMux {
     let mut mux = UnsafeMux::new();
 
     mux.apply(FuncMiddleware::new(
-        mwfunc!(ctx, { Ok(()) }),
-        mwfunc!(ctx, { Ok(()) }),
+        pre!(ctx, {
+            ctx.set("begin", Box::new(std::time::SystemTime::now()));
+        }),
+        post!(ctx, {
+            let begin = *(ctx.get::<std::time::SystemTime>("begin").unwrap());
+
+            let mut req = ctx.request();
+            let now = chrono::Local::now();
+            println!(
+                "[{}] {} {} {}us",
+                now.to_rfc3339(),
+                req.method().to_string(),
+                req.uri().path().clone(),
+                std::time::SystemTime::now()
+                    .duration_since(begin)
+                    .unwrap()
+                    .as_micros(),
+            );
+        }),
     ));
 
     mux.register(
@@ -125,7 +135,6 @@ fn new_mux() -> UnsafeMux {
         "/",
         func!(ctx, {
             let _ = ctx.response().write("hello world!".repeat(50).as_bytes());
-            Ok(())
         }),
     );
     mux
@@ -137,7 +146,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let listener = TcpListener::bind(&config.addr).await.unwrap();
     let alive_counter: Arc<AtomicI64> = Arc::new(AtomicI64::new(0));
-    let mut mux = new_mux();
+    let mux = new_mux();
     let mux_ptr: usize = unsafe { std::mem::transmute(&mux) };
 
     println!(
@@ -154,7 +163,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Err(_) => {
                         continue;
                     }
-                    Ok((stream, addr)) => {
+                    Ok((stream, _)) => {
                         let counter = alive_counter.clone();
                         let cfg = config.clone();
                         tokio::spawn(async move {

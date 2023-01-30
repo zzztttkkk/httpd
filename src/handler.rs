@@ -9,11 +9,9 @@ use crate::error::HTTPError;
 use crate::request::Request;
 use crate::response::Response;
 
-pub type HandlerResult = Result<(), Box<dyn HTTPError + Send>>;
-
 #[async_trait]
 pub trait Handler: Send + Sync {
-    async fn handle(&mut self, ctx: &mut Context) -> HandlerResult;
+    async fn handle(&mut self, ctx: &mut Context);
 }
 
 macro_rules! impl_for_raw_ptr {
@@ -48,7 +46,7 @@ pub(crate) struct CtxRawPtr(usize);
 
 impl_for_raw_ptr!(CtxRawPtr, Context);
 
-type HandlerFnFutureType = Pin<Box<dyn Future<Output = HandlerResult> + Send>>;
+type HandlerFnFutureType = Pin<Box<dyn Future<Output = ()> + Send>>;
 type HandlerFnType = Box<dyn (FnMut(CtxRawPtr) -> HandlerFnFutureType) + Send + Sync>;
 
 pub struct FuncHandler(HandlerFnType);
@@ -61,7 +59,7 @@ impl FuncHandler {
 
 #[async_trait]
 impl Handler for FuncHandler {
-    async fn handle(&mut self, ctx: &mut Context) -> Result<(), Box<dyn HTTPError + Send>> {
+    async fn handle(&mut self, ctx: &mut Context) {
         unsafe { ((self.0)(CtxRawPtr(std::mem::transmute(ctx)))).await }
     }
 }
