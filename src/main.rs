@@ -10,6 +10,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use clap::Parser;
+use middleware::FuncMiddleware;
 use once_cell::sync::Lazy;
 use tokio::io::{AsyncWriteExt, BufStream};
 use tokio::net::{TcpListener, TcpStream};
@@ -18,21 +19,24 @@ use crate::config::Config;
 use crate::error::HTTPError;
 use crate::fs::FsHandler;
 use crate::handler::Handler;
-use crate::mux::Mux;
+use crate::mux::UnsafeMux;
 use crate::response::Response;
 
 mod compress;
 mod config;
+mod context;
 mod error;
 mod fs;
 mod handler;
 mod headers;
 mod message;
+mod middleware;
 mod multi_values_map;
 mod mux;
 mod request;
 mod response;
 mod uri;
+mod sync;
 
 struct AliveCounter {
     counter: Arc<AtomicI64>,
@@ -101,11 +105,38 @@ async fn http11(
     }
 }
 
-fn init_mux(mux: &mut Mux) {
+fn new_mux() -> UnsafeMux {
+    let mut mux = UnsafeMux::new();
+
+    mux.apply(FuncMiddleware::new(
+        mwfunc!(req, _, {
+            let ctx = req.ctx_mut();
+            ctx.set("begin", Box::new(std::time::SystemTime::now()));
+            Ok(())
+        }),
+        mwfunc!(req, _, {
+            let begin = req
+                .ctx()
+                .unwrap()
+                .get::<std::time::SystemTime>("begin")
+                .unwrap();
+            println!(
+                "Req {:?} Cost {}us",
+                req.ptr(),
+                std::time::SystemTime::now()
+                    .duration_since(*begin)
+                    .unwrap()
+                    .as_micros()
+            );
+            Ok(())
+        }),
+    ));
+
     mux.register(
         "/static/httpd/source/",
         FsHandler::new("./", "/static/httpd/source"),
     );
+
     mux.register(
         "/",
         func!(req, resp, {
@@ -116,6 +147,7 @@ fn init_mux(mux: &mut Mux) {
             Ok(())
         }),
     );
+    mux
 }
 
 #[tokio::main]
@@ -124,8 +156,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let listener = TcpListener::bind(&config.addr).await.unwrap();
     let alive_counter: Arc<AtomicI64> = Arc::new(AtomicI64::new(0));
-    let mut mux = Mux::new();
-    init_mux(&mut mux);
+    let mut mux = new_mux();
     let mux_ptr: usize = unsafe { std::mem::transmute(&mux) };
 
     println!(
@@ -148,7 +179,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         tokio::spawn(async move {
                             http11(stream, counter, cfg, func!(req, resp, {
                                 let result = unsafe {
-                                    let mux: &mut Mux = std::mem::transmute(mux_ptr);
+                                    let mux: &mut UnsafeMux = std::mem::transmute(mux_ptr);
                                     mux.handle(&mut *req, &mut *resp).await
                                 };
                                 result

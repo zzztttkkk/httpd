@@ -30,24 +30,31 @@ macro_rules! impl_for_raw_ptr {
                 unsafe { std::mem::transmute(self.0) }
             }
         }
+
+        impl $name {
+            pub fn ptr(&self) -> *const $target {
+                unsafe { std::mem::transmute(self.0) }
+            }
+        }
     };
 }
 
-pub struct RequestRawPtr(usize);
+pub(crate) struct RequestRawPtr(usize);
 
 impl_for_raw_ptr!(RequestRawPtr, Request);
 
-pub struct ResponseRawPtr(usize);
+pub(crate) struct ResponseRawPtr(usize);
 
 impl_for_raw_ptr!(ResponseRawPtr, Response);
 
-type FnFutureType = Pin<Box<dyn Future<Output = HandlerResult> + Send>>;
-type FnType = Box<dyn (FnMut(RequestRawPtr, ResponseRawPtr) -> FnFutureType) + Send + Sync>;
+type HandlerFnFutureType = Pin<Box<dyn Future<Output = HandlerResult> + Send>>;
+type HandlerFnType =
+    Box<dyn (FnMut(RequestRawPtr, ResponseRawPtr) -> HandlerFnFutureType) + Send + Sync>;
 
-pub struct FuncHandler(FnType);
+pub struct FuncHandler(HandlerFnType);
 
 impl FuncHandler {
-    pub(crate) fn new(f: FnType) -> Box<Self> {
+    pub(crate) fn new(f: HandlerFnType) -> Box<Self> {
         Box::new(Self(f))
     }
 }

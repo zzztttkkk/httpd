@@ -4,17 +4,20 @@ use async_trait::async_trait;
 
 use crate::error::HTTPError;
 use crate::handler::{Handler, HandlerResult};
+use crate::middleware::Middleware;
 use crate::request::Request;
 use crate::response::Response;
 
-pub struct Mux {
+pub struct UnsafeMux {
+    middleware: Vec<Box<dyn Middleware>>,
     map: HashMap<String, Box<dyn Handler>>,
     not_found: Option<Box<dyn Handler>>,
 }
 
-impl Mux {
+impl UnsafeMux {
     pub fn new() -> Self {
         Self {
+            middleware: vec![],
             map: HashMap::new(),
             not_found: None,
         }
@@ -23,13 +26,17 @@ impl Mux {
     pub fn register(&mut self, pattern: &str, handler: Box<dyn Handler>) {
         self.map.insert(pattern.to_string(), handler);
     }
+
+    pub fn apply(&mut self, middleware: Box<dyn Middleware>) {
+        self.middleware.push(middleware);
+    }
 }
 
-unsafe impl Send for Mux {}
-unsafe impl Sync for Mux {}
+unsafe impl Send for UnsafeMux {}
+unsafe impl Sync for UnsafeMux {}
 
 #[async_trait]
-impl Handler for Mux {
+impl Handler for UnsafeMux {
     async fn handle(&mut self, req: &mut Request, resp: &mut Response) -> HandlerResult {
         let mut tmp = req.uri().path().as_str();
 
@@ -51,7 +58,31 @@ impl Handler for Mux {
                     }
                 }
                 Some(handler) => {
-                    return handler.handle(req, resp).await;
+                    for m in &mut self.middleware {
+                        match m.pre(req, resp).await {
+                            Ok(_) => {}
+                            Err(e) => {
+                                return Err(e);
+                            }
+                        }
+                    }
+
+                    match handler.handle(req, resp).await {
+                        Ok(()) => {}
+                        Err(e) => {
+                            return Err(e);
+                        }
+                    }
+
+                    for m in &mut self.middleware {
+                        match m.post(req, resp).await {
+                            Ok(_) => {}
+                            Err(e) => {
+                                return Err(e);
+                            }
+                        }
+                    }
+                    return Ok(());
                 }
             }
         }
