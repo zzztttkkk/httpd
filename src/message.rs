@@ -192,8 +192,6 @@ pub struct Message {
 
     pub(crate) _compress_type: Option<CompressType>,
     pub(crate) _chunked: bool,
-
-    pub(crate) _ctx: Option<Context>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -214,7 +212,6 @@ impl Message {
             bodybuf: None,
             _compress_type: None,
             _chunked: false,
-            _ctx: None,
         }
     }
 

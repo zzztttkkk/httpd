@@ -16,6 +16,7 @@ use tokio::io::{AsyncWriteExt, BufStream};
 use tokio::net::{TcpListener, TcpStream};
 
 use crate::config::Config;
+use crate::context::Context;
 use crate::error::HTTPError;
 use crate::fs::FsHandler;
 use crate::handler::Handler;
@@ -35,8 +36,8 @@ mod multi_values_map;
 mod mux;
 mod request;
 mod response;
-mod uri;
 mod sync;
+mod uri;
 
 struct AliveCounter {
     counter: Arc<AtomicI64>,
@@ -73,7 +74,9 @@ async fn http11(
 
                         let mut resp = Response::default(&mut req);
 
-                        match handler.handle(&mut req, &mut resp).await {
+                        let mut ctx = Context::new(unsafe{std::mem::transmute(&mut req)}, unsafe{std::mem::transmute(&mut resp)});
+
+                        match handler.handle(&mut ctx).await {
                             Ok(_) => {
                                 if let Err(e) = resp.to11(stream.as_mut()).await {
                                     println!("[{}] Request: {} {}, Error: {}", chrono::Local::now(), req.method(), req.rawpath(), e);
@@ -109,27 +112,8 @@ fn new_mux() -> UnsafeMux {
     let mut mux = UnsafeMux::new();
 
     mux.apply(FuncMiddleware::new(
-        mwfunc!(req, _, {
-            let ctx = req.ctx_mut();
-            ctx.set("begin", Box::new(std::time::SystemTime::now()));
-            Ok(())
-        }),
-        mwfunc!(req, _, {
-            let begin = req
-                .ctx()
-                .unwrap()
-                .get::<std::time::SystemTime>("begin")
-                .unwrap();
-            println!(
-                "Req {:?} Cost {}us",
-                req.ptr(),
-                std::time::SystemTime::now()
-                    .duration_since(*begin)
-                    .unwrap()
-                    .as_micros()
-            );
-            Ok(())
-        }),
+        mwfunc!(ctx, { Ok(()) }),
+        mwfunc!(ctx, { Ok(()) }),
     ));
 
     mux.register(
@@ -139,11 +123,8 @@ fn new_mux() -> UnsafeMux {
 
     mux.register(
         "/",
-        func!(req, resp, {
-            let _ = resp.write("hello world!".repeat(50).as_bytes());
-            if req.uri().path().len() != 1 {
-                resp.headers().append("Raw-Path", req.uri().path().as_str());
-            }
+        func!(ctx, {
+            let _ = ctx.response().write("hello world!".repeat(50).as_bytes());
             Ok(())
         }),
     );
@@ -177,10 +158,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let counter = alive_counter.clone();
                         let cfg = config.clone();
                         tokio::spawn(async move {
-                            http11(stream, counter, cfg, func!(req, resp, {
+                            http11(stream, counter, cfg, func!(ctx, {
                                 let result = unsafe {
                                     let mux: &mut UnsafeMux = std::mem::transmute(mux_ptr);
-                                    mux.handle(&mut *req, &mut *resp).await
+                                    mux.handle(&mut *ctx).await
                                 };
                                 result
                             })).await;

@@ -4,6 +4,7 @@ use std::pin::Pin;
 
 use async_trait::async_trait;
 
+use crate::context::Context;
 use crate::error::HTTPError;
 use crate::request::Request;
 use crate::response::Response;
@@ -12,7 +13,7 @@ pub type HandlerResult = Result<(), Box<dyn HTTPError + Send>>;
 
 #[async_trait]
 pub trait Handler: Send + Sync {
-    async fn handle(&mut self, req: &mut Request, resp: &mut Response) -> HandlerResult;
+    async fn handle(&mut self, ctx: &mut Context) -> HandlerResult;
 }
 
 macro_rules! impl_for_raw_ptr {
@@ -32,24 +33,23 @@ macro_rules! impl_for_raw_ptr {
         }
 
         impl $name {
-            pub fn ptr(&self) -> *const $target {
+            pub(crate) fn new(v: usize) -> Self {
+                Self(v)
+            }
+
+            pub fn ptr(&self) -> *const Self {
                 unsafe { std::mem::transmute(self.0) }
             }
         }
     };
 }
 
-pub(crate) struct RequestRawPtr(usize);
+pub(crate) struct CtxRawPtr(usize);
 
-impl_for_raw_ptr!(RequestRawPtr, Request);
-
-pub(crate) struct ResponseRawPtr(usize);
-
-impl_for_raw_ptr!(ResponseRawPtr, Response);
+impl_for_raw_ptr!(CtxRawPtr, Context);
 
 type HandlerFnFutureType = Pin<Box<dyn Future<Output = HandlerResult> + Send>>;
-type HandlerFnType =
-    Box<dyn (FnMut(RequestRawPtr, ResponseRawPtr) -> HandlerFnFutureType) + Send + Sync>;
+type HandlerFnType = Box<dyn (FnMut(CtxRawPtr) -> HandlerFnFutureType) + Send + Sync>;
 
 pub struct FuncHandler(HandlerFnType);
 
@@ -61,41 +61,21 @@ impl FuncHandler {
 
 #[async_trait]
 impl Handler for FuncHandler {
-    async fn handle(
-        &mut self,
-        req: &mut Request,
-        resp: &mut Response,
-    ) -> Result<(), Box<dyn HTTPError + Send>> {
-        unsafe {
-            ((self.0)(
-                RequestRawPtr(std::mem::transmute(req)),
-                ResponseRawPtr(std::mem::transmute(resp)),
-            ))
-            .await
-        }
+    async fn handle(&mut self, ctx: &mut Context) -> Result<(), Box<dyn HTTPError + Send>> {
+        unsafe { ((self.0)(CtxRawPtr(std::mem::transmute(ctx)))).await }
     }
 }
 
 #[macro_export]
 macro_rules! func {
     ($content:expr) => {
-        $crate::handler::FuncHandler::new(Box::new(move |_, _| Box::pin(async move { $content })))
+        $crate::handler::FuncHandler::new(Box::new(move |_| Box::pin(async move { $content })))
     };
-    (_, _, $content:expr) => {
-        $crate::handler::FuncHandler::new(Box::new(move |_, _| Box::pin(async move { $content })))
+    (_, $content:expr) => {
+        $crate::handler::FuncHandler::new(Box::new(move |_| Box::pin(async move { $content })))
     };
-    ($req:ident, _, $content:expr) => {
-        $crate::handler::FuncHandler::new(Box::new(move |mut $req, _| {
-            Box::pin(async move { $content })
-        }))
-    };
-    (_, $resp:ident, $content:expr) => {
-        $crate::handler::FuncHandler::new(Box::new(move |_, mut $resp| {
-            Box::pin(async move { $content })
-        }))
-    };
-    ($req:ident, $resp:ident, $content:expr) => {
-        $crate::handler::FuncHandler::new(Box::new(move |mut $req, mut $resp| {
+    ($ctx:ident, $content:expr) => {
+        $crate::handler::FuncHandler::new(Box::new(move |mut $ctx| {
             Box::pin(async move { $content })
         }))
     };

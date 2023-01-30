@@ -2,6 +2,7 @@ use std::io::Write;
 
 use async_trait::async_trait;
 
+use crate::context::Context;
 use crate::error::HTTPError;
 use crate::handler::Handler;
 use crate::request::Request;
@@ -23,19 +24,20 @@ impl FsHandler {
 
 #[async_trait]
 impl Handler for FsHandler {
-    async fn handle(
-        &mut self,
-        req: &mut Request,
-        resp: &mut Response,
-    ) -> Result<(), Box<dyn HTTPError + Send>> {
+    async fn handle(&mut self, ctx: &mut Context) -> Result<(), Box<dyn HTTPError + Send>> {
         println!(
             "Req: {:?} {:?}",
-            req as *mut Request,
-            req.headers().compress_type("accept-encoding")
+            ctx.request() as *mut Request,
+            ctx.request().headers().compress_type("accept-encoding")
         );
-        let _ = resp.write("Hello".repeat(100).as_bytes()).unwrap();
-        let _ = resp.write("World".repeat(100).as_bytes()).unwrap();
-
+        let _ = ctx
+            .response()
+            .write("Hello".repeat(100).as_bytes())
+            .unwrap();
+        let _ = ctx
+            .response()
+            .write("World".repeat(100).as_bytes())
+            .unwrap();
         Ok(())
     }
 }

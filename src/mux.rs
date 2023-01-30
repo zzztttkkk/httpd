@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 
+use crate::context::Context;
 use crate::error::HTTPError;
 use crate::handler::{Handler, HandlerResult};
 use crate::middleware::Middleware;
@@ -37,8 +38,8 @@ unsafe impl Sync for UnsafeMux {}
 
 #[async_trait]
 impl Handler for UnsafeMux {
-    async fn handle(&mut self, req: &mut Request, resp: &mut Response) -> HandlerResult {
-        let mut tmp = req.uri().path().as_str();
+    async fn handle(&mut self, ctx: &mut Context) -> HandlerResult {
+        let mut tmp = ctx.request().uri().path().as_str();
 
         loop {
             if tmp.is_empty() {
@@ -59,7 +60,7 @@ impl Handler for UnsafeMux {
                 }
                 Some(handler) => {
                     for m in &mut self.middleware {
-                        match m.pre(req, resp).await {
+                        match m.pre(ctx).await {
                             Ok(_) => {}
                             Err(e) => {
                                 return Err(e);
@@ -67,7 +68,7 @@ impl Handler for UnsafeMux {
                         }
                     }
 
-                    match handler.handle(req, resp).await {
+                    match handler.handle(ctx).await {
                         Ok(()) => {}
                         Err(e) => {
                             return Err(e);
@@ -75,7 +76,7 @@ impl Handler for UnsafeMux {
                     }
 
                     for m in &mut self.middleware {
-                        match m.post(req, resp).await {
+                        match m.post(ctx).await {
                             Ok(_) => {}
                             Err(e) => {
                                 return Err(e);
@@ -89,10 +90,10 @@ impl Handler for UnsafeMux {
 
         return match &mut self.not_found {
             None => {
-                resp._status_code = 404;
+                ctx.response()._status_code = 404;
                 Ok(())
             }
-            Some(func) => func.handle(req, resp).await,
+            Some(func) => func.handle(ctx).await,
         };
     }
 }

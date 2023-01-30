@@ -11,7 +11,6 @@ use crate::uri::ReadonlyUri;
 pub struct Request {
     msg: Box<Message>,
     _uri: Option<ReadonlyUri>,
-    _sync: Option<RwLock<()>>,
 }
 
 impl Request {
@@ -47,24 +46,6 @@ impl Request {
     pub fn body(&mut self) -> Option<&mut BodyBuf> {
         self.msg.bodybuf.as_mut()
     }
-
-    pub fn sync(&mut self) -> &mut RwLock<()> {
-        if self._sync.is_none() {
-            self._sync = Some(RwLock::new(()));
-        }
-        self._sync.as_mut().unwrap()
-    }
-
-    pub fn ctx(&self) -> Option<&Context> {
-        self.msg._ctx.as_ref()
-    }
-
-    pub fn ctx_mut(&mut self) -> &mut Context {
-        if self.msg._ctx.is_none() {
-            self.msg._ctx = Some(Context::new());
-        }
-        self.msg._ctx.as_mut().unwrap()
-    }
 }
 
 pub async fn from11<Reader: AsyncBufReadExt + Unpin + Send>(
@@ -73,11 +54,7 @@ pub async fn from11<Reader: AsyncBufReadExt + Unpin + Send>(
     cfg: &Config,
 ) -> Result<Box<Request>, StatusCodeError> {
     return match Message::from11(reader, buf, cfg).await {
-        Ok(msg) => Ok(Box::new(Request {
-            msg,
-            _uri: None,
-            _sync: None,
-        })),
+        Ok(msg) => Ok(Box::new(Request { msg, _uri: None })),
         Err(e) => Err(e),
     };
 }
