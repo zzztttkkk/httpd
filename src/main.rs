@@ -68,7 +68,7 @@ async fn http11(
             from_result = request::from11(stream.as_mut(), &mut rbuf, &cfg) => {
                 match from_result {
                     Ok(mut req) => {
-                        let _ = AliveCounter::new(counter.clone());
+                        let _ac = AliveCounter::new(counter.clone());
 
                         let mut resp = Response::default(&mut req);
 
