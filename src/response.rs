@@ -17,7 +17,6 @@ pub struct Response {
 }
 
 static mut _REASONS_MAP_INIT_LOCK: AtomicBool = AtomicBool::new(false);
-static mut _REASONS_MAP_FREEZE_LOCK: AtomicBool = AtomicBool::new(false);
 static mut _REASONS_MAP: Option<RwLock<HashMap<u32, String>>> = None;
 
 fn all_std_status_codes() -> Vec<&'static str> {
@@ -106,27 +105,12 @@ async unsafe fn get_reasons_map() -> &'static mut RwLock<HashMap<u32, String>> {
 }
 
 pub async fn register_status_code(code: u32, reason: &str) {
-    unsafe {
-        assert!(
-            !(_REASONS_MAP_FREEZE_LOCK.load(Ordering::SeqCst)),
-            "can not register after first read"
-        );
-    }
     let rw = unsafe { get_reasons_map() }.await;
     let mut map = rw.write().await;
     map.insert(code, reason.to_string());
 }
 
 async fn get_status_code_reason(code: u32) -> Option<&'static String> {
-    unsafe {
-        let _ = _REASONS_MAP_FREEZE_LOCK.compare_exchange(
-            false,
-            true,
-            Ordering::SeqCst,
-            Ordering::SeqCst,
-        );
-    }
-
     let rw = unsafe { get_reasons_map().await };
     let map = rw.read().await;
     match map.get(&code) {
@@ -147,9 +131,11 @@ impl Response {
         }
     }
 
-    pub fn default(req: &mut Request) -> Box<Self> {
+    pub fn default(req: &mut Request, disable_compression: bool) -> Box<Self> {
         let mut resp = Box::new(Self::new());
-        resp.msg._output_compress_type = req.headers().out_going_compress_type();
+        if (!disable_compression) {
+            resp.msg._output_compress_type = req.headers().out_going_compress_type();
+        }
         resp
     }
 

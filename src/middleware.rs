@@ -8,9 +8,9 @@ use crate::{
 
 #[async_trait]
 pub trait Middleware: Send + Sync {
-    async fn pre(&mut self, ctx: &mut Context);
+    async fn pre(&self, ctx: &mut Context);
 
-    async fn post(&mut self, ctx: &mut Context);
+    async fn post(&self, ctx: &mut Context);
 }
 
 pub struct FuncMiddleware {
@@ -26,14 +26,14 @@ impl FuncMiddleware {
 
 #[async_trait]
 impl Middleware for FuncMiddleware {
-    async fn pre(&mut self, ctx: &mut Context) {
-        if let Some(mut handler) = self.pre.as_mut() {
+    async fn pre(&self, ctx: &mut Context) {
+        if let Some(handler) = self.pre.as_ref() {
             handler.handle(ctx).await;
         }
     }
 
-    async fn post(&mut self, ctx: &mut Context) {
-        if let Some(mut handler) = self.post.as_mut() {
+    async fn post(&self, ctx: &mut Context) {
+        if let Some(handler) = self.post.as_ref() {
             handler.handle(ctx).await;
         }
     }

@@ -13,12 +13,12 @@ use middleware::FuncMiddleware;
 use tokio::io::{AsyncWriteExt, BufStream};
 use tokio::net::{TcpListener, TcpStream};
 
-use crate::config::Config;
+use crate::config::{Args, Config};
 use crate::context::Context;
 use crate::error::HTTPError;
 use crate::fs::FsHandler;
 use crate::handler::Handler;
-use crate::mux::UnsafeMux;
+use crate::mux::Mux;
 use crate::response::Response;
 
 mod compress;
@@ -57,20 +57,28 @@ impl Drop for AliveCounter {
 async fn http11(
     stream: TcpStream,
     counter: Arc<AtomicI64>,
-    cfg: Config,
-    mut handler: Box<dyn Handler>,
+    cfg: &Config,
+    handler: &Box<dyn Handler>,
 ) {
-    let mut stream = Box::pin(BufStream::new(stream));
-    let mut rbuf = String::with_capacity(cfg.read_buf_cap);
+    let bufstream: BufStream<TcpStream>;
+    if cfg.socket.read_buf_cap > 0 {
+        bufstream =
+            BufStream::with_capacity(cfg.socket.read_buf_cap, cfg.socket.write_buf_cap, stream)
+    } else {
+        bufstream = BufStream::new(stream);
+    }
+
+    let mut stream = Box::pin(bufstream);
+    let mut rbuf = String::with_capacity(cfg.message.read_buf_cap);
 
     loop {
         tokio::select! {
-            from_result = request::from11(stream.as_mut(), &mut rbuf, &cfg) => {
+            from_result = request::from11(stream.as_mut(), &mut rbuf, cfg) => {
                 match from_result {
                     Ok(mut req) => {
                         let _ac = AliveCounter::new(counter.clone());
 
-                        let mut resp = Response::default(&mut req);
+                        let mut resp = Response::default(&mut req, cfg.message.disbale_compression);
 
                         let mut ctx = Context::new(
                             unsafe{std::mem::transmute(req.as_mut())},
@@ -94,15 +102,15 @@ async fn http11(
                     }
                 }
             }
-            _ = tokio::time::sleep(Duration::from_secs(5)) => {
+            _ = tokio::time::sleep(Duration::from_secs(cfg.http11.conn_idle_timeout)) => {
                 return;
             }
         }
     }
 }
 
-fn new_mux() -> UnsafeMux {
-    let mut mux = UnsafeMux::new();
+fn new_mux() -> Box<dyn Handler> {
+    let mut mux = Mux::new();
 
     mux.apply(FuncMiddleware::new(
         pre!(ctx, {
@@ -137,24 +145,35 @@ fn new_mux() -> UnsafeMux {
             let _ = ctx.response().write("hello world!".repeat(50).as_bytes());
         }),
     );
-    mux
+    Box::new(mux)
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let config = Config::parse();
+    let args = Args::parse();
+    let mut config = Config::new();
+    if let Some(cf) = args.file {
+        let txt = std::fs::read_to_string(cf.as_str())?;
+        config = toml::from_str(txt.as_str())?;
+    }
+    config.autofix();
 
-    let listener = TcpListener::bind(&config.addr).await.unwrap();
-    let alive_counter: Arc<AtomicI64> = Arc::new(AtomicI64::new(0));
-    let mux = new_mux();
-    let mux_ptr: usize = unsafe { std::mem::transmute(&mux) };
-
+    let mut addr: String = args.addr.clone();
+    if !config.addr.is_empty() {
+        addr = config.addr.clone();
+    }
+    let listener = TcpListener::bind(&addr).await.unwrap();
     println!(
         "[{}] httpd listening @ {}, Pid: {}",
         chrono::Local::now(),
-        &config.addr,
+        &addr,
         std::process::id()
     );
+
+    let alive_counter: Arc<AtomicI64> = Arc::new(AtomicI64::new(0));
+    let mux = new_mux();
+    let mux_ptr: usize = unsafe { std::mem::transmute(&mux) };
+    let cfg_ptr: usize = unsafe { std::mem::transmute(&config) };
 
     loop {
         tokio::select! {
@@ -167,13 +186,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let counter = alive_counter.clone();
                         let cfg = config.clone();
                         tokio::spawn(async move {
-                            http11(stream, counter, cfg, func!(ctx, {
-                                let result = unsafe {
-                                    let mux: &mut UnsafeMux = std::mem::transmute(mux_ptr);
-                                    mux.handle(&mut *ctx).await
-                                };
-                                result
-                            })).await;
+                            http11(stream, counter, unsafe{ std::mem::transmute(cfg_ptr) }, unsafe{ std::mem::transmute(mux_ptr) }).await;
                         });
                     }
                 }

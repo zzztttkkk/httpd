@@ -9,13 +9,13 @@ use crate::middleware::Middleware;
 use crate::request::Request;
 use crate::response::Response;
 
-pub struct UnsafeMux {
+pub struct Mux {
     middleware: Vec<Box<dyn Middleware>>,
     map: HashMap<String, Box<dyn Handler>>,
     not_found: Option<Box<dyn Handler>>,
 }
 
-impl UnsafeMux {
+impl Mux {
     pub fn new() -> Self {
         Self {
             middleware: vec![],
@@ -33,12 +33,13 @@ impl UnsafeMux {
     }
 }
 
-unsafe impl Send for UnsafeMux {}
-unsafe impl Sync for UnsafeMux {}
+unsafe impl Send for Mux {}
+unsafe impl Sync for Mux {}
 
 #[async_trait]
-impl Handler for UnsafeMux {
-    async fn handle(&mut self, ctx: &mut Context) {
+impl Handler for Mux {
+    async fn handle(&self, ctx: &mut Context) {
+        /// the `tmp` used before the user change the request path
         let mut tmp: &str = unsafe { std::mem::transmute(ctx.request().uri().path().as_str()) };
 
         loop {
@@ -46,7 +47,7 @@ impl Handler for UnsafeMux {
                 break;
             }
 
-            match self.map.get_mut(tmp) {
+            match self.map.get(tmp) {
                 None => {
                     if tmp.len() == 1 {
                         break;
@@ -61,7 +62,7 @@ impl Handler for UnsafeMux {
                 Some(handler) => {
                     let sync = ctx.sync();
 
-                    for m in &mut self.middleware {
+                    for m in &self.middleware {
                         m.pre(ctx).await;
                         let _r = sync.read().await;
                         if ctx._pre_stop {
@@ -71,7 +72,7 @@ impl Handler for UnsafeMux {
 
                     handler.handle(ctx).await;
 
-                    for m in &mut self.middleware {
+                    for m in &self.middleware {
                         m.post(ctx).await;
                         let _r = sync.read().await;
                         if ctx._post_stop {
@@ -84,7 +85,7 @@ impl Handler for UnsafeMux {
             }
         }
 
-        match &mut self.not_found {
+        match &self.not_found {
             None => {
                 ctx.response()._status_code = 404;
             }
