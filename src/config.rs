@@ -49,11 +49,15 @@ impl ConfigSocket {
 
 #[derive(Deserialize, Clone)]
 pub struct ConfigMessage {
-    pub max_incoming_body_size: i64,
+    pub max_incoming_body_size: usize,
 
     pub read_buf_cap: usize,
 
-    pub max_header_line_size: i64,
+    pub max_header_line_size: usize,
+
+    pub max_header_count: usize,
+
+    pub max_first_line_size: usize,
 
     pub disbale_compression: bool,
 }
@@ -64,6 +68,8 @@ impl ConfigMessage {
             max_incoming_body_size: 0,
             read_buf_cap: 0,
             max_header_line_size: 0,
+            max_header_count: 0,
+            max_first_line_size: 0,
             disbale_compression: false,
         }
     }
@@ -74,8 +80,11 @@ impl ConfigMessage {
         if self.max_header_line_size < 1 {
             self.max_header_line_size = 1024 * 8; // 8KB
         }
-        if self.max_incoming_body_size < 1 {
-            self.max_incoming_body_size = 1024 * 1024 * 10; // 10 MB
+        if self.max_first_line_size < 1 {
+            self.max_first_line_size = 1024 * 6; // 6KB
+        }
+        if self.max_header_count < 1 {
+            self.max_header_count = 9999;
         }
     }
 }

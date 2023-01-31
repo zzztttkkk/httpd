@@ -35,6 +35,7 @@ mod mux;
 mod request;
 mod response;
 mod sync;
+mod time;
 mod uri;
 
 struct AliveCounter {
@@ -114,22 +115,19 @@ fn new_mux() -> Box<dyn Handler> {
 
     mux.apply(FuncMiddleware::new(
         pre!(ctx, {
-            ctx.set("begin", Box::new(std::time::SystemTime::now()));
+            ctx.set("begin", Box::new(time::now()));
         }),
         post!(ctx, {
-            let begin = *(ctx.get::<std::time::SystemTime>("begin").unwrap());
+            let begin = *(ctx.get::<time::LocalTime>("begin").unwrap());
 
             let mut req = ctx.request();
-            let now = chrono::Local::now();
+            let now = time::now();
             println!(
                 "[{}] {} {} {}us",
-                now.to_rfc3339(),
+                now.format(time::DEFAULT_TIME_LAYOUT),
                 req.method().to_string(),
                 req.uri().path().clone(),
-                std::time::SystemTime::now()
-                    .duration_since(begin)
-                    .unwrap()
-                    .as_micros(),
+                time::duration(now, begin).num_microseconds().unwrap(),
             );
         }),
     ));
@@ -165,7 +163,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let listener = TcpListener::bind(&addr).await.unwrap();
     println!(
         "[{}] httpd listening @ {}, Pid: {}",
-        chrono::Local::now(),
+        time::txt(),
         &addr,
         std::process::id()
     );
@@ -192,14 +190,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             _ = tokio::signal::ctrl_c() => {
-                println!("[{}] httpd is preparing to shutdown", chrono::Local::now());
+                println!("[{}] httpd is preparing to shutdown", time::txt());
                 loop {
                     if alive_counter.load(Ordering::Relaxed) < 1 {
                         break;
                     }
                     tokio::time::sleep(Duration::from_millis(10)).await;
                 }
-                println!("[{}] httpd is gracefully shutdown", chrono::Local::now());
+                println!("[{}] httpd is gracefully shutdown", time::txt());
                 return Ok(());
             }
         }

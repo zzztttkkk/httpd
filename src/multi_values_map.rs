@@ -24,6 +24,13 @@ impl MultiValuesMap {
         }
     }
 
+    pub fn len(&self) -> usize {
+        match &self._map {
+            Some(map) => map.len(),
+            None => 0,
+        }
+    }
+
     fn _do_append(&mut self, key: &str, val: &str) {
         match &mut self._map {
             None => {

@@ -253,6 +253,7 @@ impl Message {
 
         let mut body_remains: i64 = 0;
         let mut is_chunked = false;
+        let mut header_count = 0;
 
         loop {
             match status {
@@ -266,6 +267,10 @@ impl Message {
 
                             if line_size == 2 {
                                 continue;
+                            }
+
+                            if line_size > cfg.message.max_first_line_size {
+                                return Err(StatusCodeError::new(0));
                             }
 
                             let mut fls = 0;
@@ -323,6 +328,12 @@ impl Message {
                                 } else {
                                     let cl = msg.headers.content_length();
                                     if cl > 0 {
+                                        if cfg.message.max_incoming_body_size > 0
+                                            && cl > cfg.message.max_incoming_body_size
+                                        {
+                                            return Err(StatusCodeError::new(0));
+                                        }
+
                                         body_remains = cl as i64;
                                         let mut bbuf = ByteBuffer::new();
                                         bbuf.resize(body_remains as usize);
@@ -346,6 +357,14 @@ impl Message {
                                 continue;
                             }
 
+                            if line_size > cfg.message.max_header_line_size {
+                                return Err(StatusCodeError::new(0));
+                            }
+
+                            if header_count > cfg.message.max_header_count {
+                                return Err(StatusCodeError::new(0));
+                            }
+
                             if !buf.is_ascii() {
                                 return Err(StatusCodeError::new(0));
                             }
@@ -364,6 +383,7 @@ impl Message {
                                 }
                                 Some(v) => {
                                     msg.headers.append(key, v.trim());
+                                    header_count += 1;
                                 }
                             }
                         }
