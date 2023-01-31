@@ -5,7 +5,7 @@ pub type UtcTime = chrono::DateTime<chrono::Utc>;
 
 pub static DEFAULT_TIME_LAYOUT: &str = "%Y-%m-%d %H:%M:%S.%6f";
 
-pub fn txt() -> String {
+pub fn currentstr() -> String {
     now().format(DEFAULT_TIME_LAYOUT).to_string()
 }
 
@@ -26,11 +26,11 @@ pub fn duration<T: chrono::TimeZone>(
 
 #[cfg(test)]
 mod tests {
-    use crate::time::txt;
+    use crate::time::currentstr;
 
     #[test]
     fn x() {
-        println!("{}", txt());
-        println!("{}", txt());
+        println!("{}", currentstr());
+        println!("{}", currentstr());
     }
 }

@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 #![allow(unused)]
 
 extern crate core;
@@ -9,7 +8,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use clap::Parser;
-use middleware::FuncMiddleware;
 use tokio::io::{AsyncWriteExt, BufStream};
 use tokio::net::{TcpListener, TcpStream};
 
@@ -26,9 +24,11 @@ mod config;
 mod context;
 mod error;
 mod fs;
+#[macro_use]
 mod handler;
 mod headers;
 mod message;
+#[macro_use]
 mod middleware;
 mod multi_values_map;
 mod mux;
@@ -113,24 +113,7 @@ async fn http11(
 fn new_mux() -> Box<dyn Handler> {
     let mut mux = Mux::new();
 
-    mux.apply(FuncMiddleware::new(
-        pre!(ctx, {
-            ctx.set("begin", Box::new(time::now()));
-        }),
-        post!(ctx, {
-            let begin = *(ctx.get::<time::LocalTime>("begin").unwrap());
-
-            let mut req = ctx.request();
-            let now = time::now();
-            println!(
-                "[{}] {} {} {}us",
-                now.format(time::DEFAULT_TIME_LAYOUT),
-                req.method().to_string(),
-                req.uri().path().clone(),
-                time::duration(now, begin).num_microseconds().unwrap(),
-            );
-        }),
-    ));
+    mux.enable_access_log("console");
 
     mux.register(
         "/static/httpd/source/",
@@ -149,10 +132,12 @@ fn new_mux() -> Box<dyn Handler> {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
-    let mut config = Config::new();
+    let mut config;
     if let Some(cf) = args.file {
         let txt = std::fs::read_to_string(cf.as_str())?;
         config = toml::from_str(txt.as_str())?;
+    } else {
+        config = Config::default();
     }
     config.autofix();
 
@@ -163,7 +148,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let listener = TcpListener::bind(&addr).await.unwrap();
     println!(
         "[{}] httpd listening @ {}, Pid: {}",
-        time::txt(),
+        time::currentstr(),
         &addr,
         std::process::id()
     );
@@ -182,7 +167,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     Ok((stream, _)) => {
                         let counter = alive_counter.clone();
-                        let cfg = config.clone();
                         tokio::spawn(async move {
                             http11(stream, counter, unsafe{ std::mem::transmute(cfg_ptr) }, unsafe{ std::mem::transmute(mux_ptr) }).await;
                         });
@@ -190,14 +174,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             _ = tokio::signal::ctrl_c() => {
-                println!("[{}] httpd is preparing to shutdown", time::txt());
+                println!("[{}] httpd is preparing to shutdown", time::currentstr());
                 loop {
                     if alive_counter.load(Ordering::Relaxed) < 1 {
                         break;
                     }
                     tokio::time::sleep(Duration::from_millis(10)).await;
                 }
-                println!("[{}] httpd is gracefully shutdown", time::txt());
+                println!("[{}] httpd is gracefully shutdown", time::currentstr());
                 return Ok(());
             }
         }

@@ -1,10 +1,6 @@
-use std::{any::Any, collections::HashMap};
-
 use async_trait::async_trait;
 
-use crate::{
-    context::Context, error::HTTPError, handler::Handler, request::Request, response::Response,
-};
+use crate::{context::Context, handler::Handler};
 
 #[async_trait]
 pub trait Middleware: Send + Sync {

@@ -7,7 +7,6 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 
 use crate::compress::{CompressType, CompressWriter, Deflate, Gzip};
 use crate::config::Config;
-use crate::context::Context;
 use crate::error::StatusCodeError;
 use crate::headers::Headers;
 
@@ -70,9 +69,9 @@ impl BodyBuf {
             self.decoder = None;
         }
 
-        if let Some(encoder) = &mut self.encoder {
+        if let Some(_) = &mut self.encoder {
             if !self._encoder_finished {
-                self.finishcompress();
+                let _ = self.finishcompress();
             }
             self.encoder = None;
             self._encoder_finished = false;
