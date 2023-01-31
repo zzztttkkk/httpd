@@ -22,11 +22,7 @@ impl FsHandler {
 #[async_trait]
 impl Handler for FsHandler {
     async fn handle(&mut self, ctx: &mut Context) {
-        println!(
-            "Req: {:?} {:?}",
-            ctx.request(),
-            ctx.request().headers().compress_type("accept-encoding")
-        );
+        println!("Req: {:?}", ctx.request(),);
         let _ = ctx
             .response()
             .write("Hello".repeat(100).as_bytes())

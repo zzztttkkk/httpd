@@ -18,6 +18,12 @@ impl MultiValuesMap {
         self._map.as_ref()
     }
 
+    pub fn clear(&mut self) {
+        if let Some(map) = &mut self._map {
+            map.clear();
+        }
+    }
+
     fn _do_append(&mut self, key: &str, val: &str) {
         match &mut self._map {
             None => {

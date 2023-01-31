@@ -149,7 +149,7 @@ impl Response {
 
     pub fn default(req: &mut Request) -> Box<Self> {
         let mut resp = Box::new(Self::new());
-        resp.msg._compress_type = req.headers().compress_type("accept-encoding");
+        resp.msg._output_compress_type = req.headers().out_going_compress_type();
         resp
     }
 
@@ -162,6 +162,11 @@ impl Response {
     #[inline(always)]
     pub fn headers(&mut self) -> &mut Headers {
         &mut self.msg.headers
+    }
+
+    pub fn clear(&mut self) {
+        self.msg.clear();
+        self._status_code = 0;
     }
 
     async fn tomsg(&mut self) {
@@ -215,7 +220,7 @@ mod tests {
     #[test]
     fn resp_wf() {
         let mut resp = Response::new();
-        resp.msg._compress_type = Some(CompressType::Gzip);
+        resp.msg._output_compress_type = Some(CompressType::Gzip);
 
         let _ = resp.write("hello".repeat(10).as_bytes()).unwrap();
         resp.flush().unwrap();

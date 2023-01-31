@@ -9,7 +9,8 @@ pub struct Headers {
 
     _content_length: Option<usize>,
     _is_chunked: Option<bool>,
-    _compress_type: Option<Option<CompressType>>,
+    _in_compress_type: Option<Option<CompressType>>,
+    _out_compress_type: Option<Option<CompressType>>,
 }
 
 impl Headers {
@@ -18,8 +19,19 @@ impl Headers {
             map: None,
             _content_length: None,
             _is_chunked: None,
-            _compress_type: None,
+            _in_compress_type: None,
+            _out_compress_type: None,
         }
+    }
+
+    pub fn clear(&mut self) {
+        if let Some(map) = &mut self.map {
+            map.clear();
+        }
+        self._content_length = None;
+        self._is_chunked = None;
+        self._in_compress_type = None;
+        self._out_compress_type = None;
     }
 
     pub fn map(&self) -> Option<&HashMap<String, Vec<String>>> {
@@ -134,45 +146,64 @@ impl Headers {
         self.set("content-type", val)
     }
 
-    pub fn compress_type(&mut self, key: &str) -> Option<CompressType> {
-        return match self._compress_type {
-            None => match self.get_all(key) {
-                None => {
-                    self._compress_type = Some(None);
-                    None
-                }
-                Some(vec) => {
-                    let mut ct: Option<CompressType> = None;
-                    for item in vec.iter() {
-                        let item = item.to_ascii_lowercase();
-                        if item == "deflate" {
-                            ct = Some(CompressType::Deflate);
-                            break;
-                        }
-                        if item == "gzip" {
-                            ct = Some(CompressType::Gzip);
-                            break;
-                        }
+    pub fn in_coming_compress_type(&mut self) -> Option<CompressType> {
+        match &mut self._in_compress_type {
+            Some(v) => {
+                return *v;
+            }
+            None => {
+                let v = self.compress_type("content-encoding");
+                self._in_compress_type = Some(v);
+                return v;
+            }
+        }
+    }
 
-                        let fo = item
-                            .split(',')
-                            .map(|v| v.trim())
-                            .find(|&x| x.starts_with("deflate") || x.starts_with("gzip"));
-                        if let Some(v) = fo {
-                            if v.starts_with('d') {
-                                ct = Some(CompressType::Deflate);
-                            } else {
-                                ct = Some(CompressType::Gzip);
-                            }
-                            break;
-                        }
+    pub fn out_going_compress_type(&mut self) -> Option<CompressType> {
+        match &mut self._out_compress_type {
+            Some(v) => {
+                return *v;
+            }
+            None => {
+                let v = self.compress_type("accept-encoding");
+                self._out_compress_type = Some(v);
+                return v;
+            }
+        }
+    }
+
+    fn compress_type(&mut self, key: &str) -> Option<CompressType> {
+        match self.get_all(key) {
+            None => None,
+            Some(vec) => {
+                let mut ct: Option<CompressType> = None;
+                for item in vec.iter() {
+                    let item = item.to_ascii_lowercase();
+                    if item == "deflate" {
+                        ct = Some(CompressType::Deflate);
+                        break;
                     }
-                    self._compress_type = Some(ct);
-                    ct
+                    if item == "gzip" {
+                        ct = Some(CompressType::Gzip);
+                        break;
+                    }
+
+                    let fo = item
+                        .split(',')
+                        .map(|v| v.trim())
+                        .find(|&x| x.starts_with("deflate") || x.starts_with("gzip"));
+                    if let Some(v) = fo {
+                        if v.starts_with('d') {
+                            ct = Some(CompressType::Deflate);
+                        } else {
+                            ct = Some(CompressType::Gzip);
+                        }
+                        break;
+                    }
                 }
-            },
-            Some(opt) => opt,
-        };
+                ct
+            }
+        }
     }
 
     pub fn set_content_encoding(&mut self, compress_type: CompressType) {

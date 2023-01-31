@@ -65,6 +65,24 @@ impl BodyBuf {
         ByteBuffer::write(self.raw.as_mut().unwrap(), buf).unwrap();
     }
 
+    pub(crate) fn clear(&mut self) {
+        if self.decoder.is_some() {
+            self.decoder = None;
+        }
+
+        if let Some(encoder) = &mut self.encoder {
+            if !self._encoder_finished {
+                self.finishcompress();
+            }
+            self.encoder = None;
+            self._encoder_finished = false;
+        }
+
+        if let Some(buf) = &mut self.raw {
+            buf.clear();
+        }
+    }
+
     #[inline(always)]
     pub fn decompress(&mut self, ct: CompressType) {
         match ct {
@@ -190,32 +208,42 @@ pub struct Message {
     pub(crate) headers: Headers,
     pub(crate) bodybuf: Option<BodyBuf>,
 
-    pub(crate) _compress_type: Option<CompressType>,
-    pub(crate) _chunked: bool,
+    pub(crate) _output_compress_type: Option<CompressType>,
+    pub(crate) _output_chunked: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
 enum ReadStatus {
     None,
     Headers,
-    Body(i64),
+    Body,
     Ok,
 }
 
 impl Message {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             f0: "".to_string(),
             f1: "".to_string(),
             f2: "".to_string(),
             headers: Headers::new(),
             bodybuf: None,
-            _compress_type: None,
-            _chunked: false,
+            _output_compress_type: None,
+            _output_chunked: false,
         }
     }
 
-    pub async fn from11<Reader: AsyncBufReadExt + Unpin + Send>(
+    pub(crate) fn clear(&mut self) {
+        self.f0.clear();
+        self.f1.clear();
+        self.f2.clear();
+        self.headers.clear();
+        if let Some(body) = &mut self.bodybuf {
+            body.clear();
+        }
+    }
+
+    pub(crate) async fn from11<Reader: AsyncBufReadExt + Unpin + Send>(
         mut reader: Reader,
         buf: &mut String,
         cfg: &Config,
@@ -306,7 +334,15 @@ impl Message {
                                         }
                                     }
                                 }
-                                status = ReadStatus::Body(body_remains);
+
+                                match msg.headers.in_coming_compress_type() {
+                                    Some(ct) => {
+                                        msg.bodybuf.as_mut().unwrap().decompress(ct);
+                                    }
+                                    None => {}
+                                }
+
+                                status = ReadStatus::Body;
                                 continue;
                             }
 
@@ -337,7 +373,7 @@ impl Message {
                         }
                     }
                 }
-                ReadStatus::Body(_) => {
+                ReadStatus::Body => {
                     if is_chunked {
                         loop {
                             buf.clear();
@@ -467,7 +503,7 @@ impl Message {
         }
     }
 
-    pub async fn to11<Writer: AsyncWriteExt + Unpin + Send>(
+    pub(crate) async fn to11<Writer: AsyncWriteExt + Unpin + Send>(
         &mut self,
         mut writer: Writer,
     ) -> std::io::Result<()> {
@@ -478,7 +514,7 @@ impl Message {
         .await)?;
 
         let body_buf_size = self.body_buf_size();
-        if !self._chunked {
+        if !self._output_chunked {
             self.headers.set_content_length(body_buf_size);
         }
 
@@ -493,7 +529,7 @@ impl Message {
         (writer.write_u8(b'\n').await)?;
 
         if body_buf_size > 0 {
-            if self._chunked {
+            if self._output_chunked {
                 //todo
             } else {
                 let buf = self.bodybuf.as_ref().unwrap().raw().unwrap();
@@ -515,7 +551,7 @@ impl Write for Message {
 
         let body = self.bodybuf.as_mut().unwrap();
         if init {
-            if let Some(ct) = self._compress_type {
+            if let Some(ct) = self._output_compress_type {
                 body.begincompress(ct, Compression::default());
                 self.headers.set_content_encoding(ct);
             }
@@ -532,7 +568,7 @@ impl Write for Message {
 
         let body = self.bodybuf.as_mut().unwrap();
         let result = body.flush();
-        if self._compress_type.is_some() {
+        if self._output_compress_type.is_some() {
             match body.finishcompress() {
                 Ok(_) => {}
                 Err(e) => {
