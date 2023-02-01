@@ -8,7 +8,14 @@ use tokio::{io::BufStream, net::TcpStream};
 
 use crate::{
     config::Config,
-    http::{context::Context, error::HTTPError, handler::Handler, request, response::Response},
+    http::{
+        context::Context,
+        error::HTTPError,
+        handler::Handler,
+        request,
+        response::Response,
+        websocket::{websocket_conn, websocket_handshake},
+    },
 };
 
 pub async fn http11(
@@ -33,8 +40,6 @@ pub async fn http11(
             from_result = request::from11(stream.as_mut(), &mut rbuf, cfg) => {
                 match from_result {
                     Ok(mut req) => {
-                        // let _ac = AliveCounter::new(counter.clone());
-
                         let mut resp = Response::default(&mut req, cfg.message.disbale_compression);
 
                         let mut ctx = Context::new(
@@ -42,12 +47,37 @@ pub async fn http11(
                             unsafe{std::mem::transmute(resp.as_mut())}
                         );
 
+                        if req.method() == "GET" {
+                            if let Some(conn) = req.headers().get("connection"){
+                                if (conn.to_lowercase() == "upgrade"){
+                                    if let Some(proto_info) = req.headers().get("upgrade"){
+                                        let proto_info = proto_info.to_lowercase();
+                                        if proto_info.starts_with("websocket") {
+                                            if !(websocket_handshake(&mut ctx).await){
+                                                return;
+                                            }
+
+                                            let _ = resp.to11(stream.as_mut()).await;
+                                            if let Err(_) = (stream.flush().await) {
+                                                return ;
+                                            }
+
+                                            tokio::spawn(async move {
+                                                websocket_conn(stream).await;
+                                            });
+                                            return;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         handler.handle(&mut ctx).await;
 
                         let _ = resp.to11(stream.as_mut()).await;
                         if let Err(_) = (stream.flush().await) {
                             return ;
-                        };
+                        }
                     }
                     Err(e) => {
                         let code = e.statuscode();

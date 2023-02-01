@@ -13,5 +13,6 @@ mod http11;
 mod mux;
 mod request;
 mod response;
+mod websocket;
 
 pub use conn::conn;
