@@ -1,16 +1,17 @@
 use std::{
+    pin::Pin,
     sync::{atomic::AtomicI64, Arc},
     time::Duration,
 };
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 
 use tokio::{io::BufStream, net::TcpStream};
 
 use crate::{
     config::Config,
     http::{
-        context::Context, error::HTTPError, handler::Handler, http2, request, response::Response,
-        websocket,
+        context::Context, error::HTTPError, handler::Handler, http2, message, request,
+        response::Response, websocket,
     },
 };
 
@@ -58,7 +59,7 @@ pub async fn http11(
                                     });
                                     return;
                                 }
-                                "http2" => {
+                                ("h2c"| "http2"| "h2") => {
                                     tokio::spawn(async move{
                                         http2::conn(stream).await;
                                     });
@@ -72,7 +73,46 @@ pub async fn http11(
                     }
                     Err(e) => {
                         let code = e.statuscode();
-                        if code < 100 {
+                        if code == message::READ_MSG_ERROR_MAYBE_HTTP2 {
+                            rbuf.clear();
+                            match stream.read_line(&mut rbuf).await {
+                                Ok(line_size) => {
+                                    if line_size != 2 {
+                                        return;
+                                    }
+                                },
+                                Err(_) => {
+                                    return;
+                                }
+                            }
+                            rbuf.clear();
+                            match stream.read_line(&mut rbuf).await {
+                                Ok(line_size) => {
+                                    if line_size != 4 || &rbuf[0..2] != "SM" {
+                                        return;
+                                    }
+                                },
+                                Err(_) => {
+                                    return;
+                                }
+                            }
+                            rbuf.clear();
+                            match stream.read_line(&mut rbuf).await {
+                                Ok(line_size) => {
+                                    if line_size != 2 {
+                                        return ;
+                                    }
+                                },
+                                Err(_) => {
+                                    return;
+                                }
+                            }
+                            tokio::spawn(async move{
+                                http2::conn(stream).await;
+                            });
+                            return;
+                        }
+                        if code < 50 {
                             return;
                         }
                         let _ = stream.write(format!("HTTP/1.0 {} Bad Request\r\nConnection: close\r\n\r\n", code).as_bytes()).await;

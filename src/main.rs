@@ -14,13 +14,6 @@ mod config;
 mod http;
 mod utils;
 
-fn init_log(fp: String) {
-    let cfg = log4rs::config::RawConfig::default();
-    if !fp.is_empty() {}
-
-    log4rs::init_raw_config(Default::default());
-}
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
@@ -32,8 +25,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config = Config::default();
     }
     config.autofix();
-
-    init_log(config.log_config_file.clone());
 
     let mut addr: String = args.addr.clone();
     if !config.addr.is_empty() {

@@ -219,6 +219,8 @@ enum ReadStatus {
     Ok,
 }
 
+pub static READ_MSG_ERROR_MAYBE_HTTP2: i32 = 12;
+
 impl Message {
     pub(crate) fn new() -> Self {
         Self {
@@ -270,6 +272,10 @@ impl Message {
 
                             if line_size > cfg.message.max_first_line_size {
                                 return Err(StatusCodeError::new(0));
+                            }
+
+                            if buf.starts_with("PRI * HTTP/2.0") {
+                                return Err(StatusCodeError::new(READ_MSG_ERROR_MAYBE_HTTP2));
                             }
 
                             let mut fls = 0;

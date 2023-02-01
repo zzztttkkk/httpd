@@ -8,18 +8,22 @@ pub static DEFAULT_TIME_LAYOUT: &str = "%Y-%m-%d %H:%M:%S.%6f";
 pub struct Time();
 
 impl Time {
+    #[inline]
     pub fn currentstr() -> String {
         Self::now().format(DEFAULT_TIME_LAYOUT).to_string()
     }
 
+    #[inline]
     pub fn now() -> LocalTime {
         chrono::Local::now()
     }
 
+    #[inline]
     pub fn utc() -> UtcTime {
         chrono::Utc::now()
     }
 
+    #[inline]
     pub fn duration<T: chrono::TimeZone>(
         begin: chrono::DateTime<T>,
         end: chrono::DateTime<T>,

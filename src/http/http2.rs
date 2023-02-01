@@ -8,4 +8,6 @@ pub fn handshake(ctx: &mut Context) -> bool {
     false
 }
 
-pub async fn conn(bufstream: Pin<Box<BufStream<TcpStream>>>) {}
+pub async fn conn(bufstream: Pin<Box<BufStream<TcpStream>>>) {
+    todo!("http2")
+}
