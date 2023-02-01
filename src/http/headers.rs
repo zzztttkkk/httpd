@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use crate::compress::CompressType;
-use crate::multi_values_map::MultiValuesMap;
+use crate::http::compress::CompressType;
+use crate::utils::MultiValuesMap;
 
 #[derive(Debug)]
 pub struct Headers {

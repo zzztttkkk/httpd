@@ -81,6 +81,9 @@ pub struct Config {
     pub addr: String,
 
     #[serde(default)]
+    pub log_config_file: String,
+
+    #[serde(default)]
     pub message: ConfigMessage,
 
     #[serde(default)]
@@ -101,7 +104,7 @@ impl Config {
 #[derive(Parser)]
 #[command(name = "httpd")]
 #[command(about = "A simple http server", long_about = None)]
-pub(crate) struct Args {
+pub struct Args {
     #[arg(default_value = "127.0.0.1:8080")]
     /// httpd listing address
     pub addr: String,

@@ -3,7 +3,7 @@ use std::fmt::{format, Formatter};
 
 use once_cell::sync::Lazy;
 
-use crate::multi_values_map::MultiValuesMap;
+use crate::utils::MultiValuesMap;
 
 /// UNSAFE!!!!!!!!!!!!!!!!!
 pub struct ReadonlyUri {
@@ -323,7 +323,7 @@ impl Uri {
 
 #[cfg(test)]
 mod tests {
-    use crate::uri::{ReadonlyUri, Uri};
+    use crate::utils::{ReadonlyUri, Uri};
 
     #[test]
     fn safe_path() {

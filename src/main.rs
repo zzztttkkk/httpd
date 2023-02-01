@@ -1,132 +1,24 @@
 #![allow(unused)]
 
-extern crate core;
-
-use std::io::Write;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
 use clap::Parser;
-use tokio::io::{AsyncWriteExt, BufStream};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::TcpListener;
 
 use crate::config::{Args, Config};
-use crate::context::Context;
-use crate::error::HTTPError;
-use crate::fs::FsHandler;
-use crate::handler::Handler;
-use crate::mux::Mux;
-use crate::response::Response;
+use crate::http::conn;
 
-mod compress;
 mod config;
-mod context;
-mod error;
-mod fs;
-#[macro_use]
-mod handler;
-mod headers;
-mod message;
-#[macro_use]
-mod middleware;
-mod multi_values_map;
-mod mux;
-mod request;
-mod response;
-mod sync;
-mod time;
-mod uri;
+mod http;
+mod utils;
 
-struct AliveCounter {
-    counter: Arc<AtomicI64>,
-}
+fn init_log(fp: String) {
+    let cfg = log4rs::config::RawConfig::default();
+    if !fp.is_empty() {}
 
-impl AliveCounter {
-    fn new(counter: Arc<AtomicI64>) -> Self {
-        counter.fetch_add(1, Ordering::Relaxed);
-        Self { counter }
-    }
-}
-
-impl Drop for AliveCounter {
-    fn drop(&mut self) {
-        self.counter.fetch_sub(1, Ordering::Relaxed);
-    }
-}
-
-async fn http11(
-    stream: TcpStream,
-    counter: Arc<AtomicI64>,
-    cfg: &Config,
-    handler: &Box<dyn Handler>,
-) {
-    let bufstream: BufStream<TcpStream>;
-    if cfg.socket.read_buf_cap > 0 {
-        bufstream =
-            BufStream::with_capacity(cfg.socket.read_buf_cap, cfg.socket.write_buf_cap, stream)
-    } else {
-        bufstream = BufStream::new(stream);
-    }
-
-    let mut stream = Box::pin(bufstream);
-    let mut rbuf = String::with_capacity(cfg.message.read_buf_cap);
-
-    loop {
-        tokio::select! {
-            from_result = request::from11(stream.as_mut(), &mut rbuf, cfg) => {
-                match from_result {
-                    Ok(mut req) => {
-                        let _ac = AliveCounter::new(counter.clone());
-
-                        let mut resp = Response::default(&mut req, cfg.message.disbale_compression);
-
-                        let mut ctx = Context::new(
-                            unsafe{std::mem::transmute(req.as_mut())},
-                            unsafe{std::mem::transmute(resp.as_mut())}
-                        );
-
-                        handler.handle(&mut ctx).await;
-
-                        let _ = resp.to11(stream.as_mut()).await;
-                        if let Err(_) = (stream.flush().await) {
-                            return ;
-                        };
-                    }
-                    Err(e) => {
-                        let code = e.statuscode();
-                        if code < 100 {
-                            return;
-                        }
-                        let _ = stream.write(format!("HTTP/1.0 {} Bad Request\r\nContent-Length: 12\r\n\r\nHello World!", e).as_bytes()).await;
-                        let _ = stream.flush().await;
-                    }
-                }
-            }
-            _ = tokio::time::sleep(Duration::from_secs(cfg.http11.conn_idle_timeout)) => {
-                return;
-            }
-        }
-    }
-}
-
-fn new_mux() -> Box<dyn Handler> {
-    let mut mux = Mux::new();
-
-    mux.enable_access_log("console");
-
-    mux.register(
-        "/static/httpd/source/",
-        FsHandler::new("./", "/static/httpd/source"),
-    );
-
-    mux.register(
-        "/",
-        func!(ctx, {
-            let _ = ctx.response().write("hello world!".repeat(50).as_bytes());
-        }),
-    );
-    Box::new(mux)
+    log4rs::init_raw_config(Default::default());
 }
 
 #[tokio::main]
@@ -141,6 +33,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     config.autofix();
 
+    init_log(config.log_config_file.clone());
+
     let mut addr: String = args.addr.clone();
     if !config.addr.is_empty() {
         addr = config.addr.clone();
@@ -148,14 +42,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let listener = TcpListener::bind(&addr).await.unwrap();
     println!(
         "[{}] httpd listening @ {}, Pid: {}",
-        time::currentstr(),
+        utils::Time::currentstr(),
         &addr,
         std::process::id()
     );
 
     let alive_counter: Arc<AtomicI64> = Arc::new(AtomicI64::new(0));
-    let mux = new_mux();
-    let mux_ptr: usize = unsafe { std::mem::transmute(&mux) };
+    let handler = func!({});
+    let handler_ptr: usize = unsafe { std::mem::transmute(&handler) };
     let cfg_ptr: usize = unsafe { std::mem::transmute(&config) };
 
     loop {
@@ -168,20 +62,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Ok((stream, _)) => {
                         let counter = alive_counter.clone();
                         tokio::spawn(async move {
-                            http11(stream, counter, unsafe{ std::mem::transmute(cfg_ptr) }, unsafe{ std::mem::transmute(mux_ptr) }).await;
+                            conn(stream, counter, unsafe{ std::mem::transmute(cfg_ptr) }, unsafe{ std::mem::transmute(handler_ptr) }).await;
                         });
                     }
                 }
             }
             _ = tokio::signal::ctrl_c() => {
-                println!("[{}] httpd is preparing to shutdown", time::currentstr());
+                println!("[{}] httpd is preparing to shutdown", utils::Time::currentstr());
                 loop {
                     if alive_counter.load(Ordering::Relaxed) < 1 {
                         break;
                     }
                     tokio::time::sleep(Duration::from_millis(10)).await;
                 }
-                println!("[{}] httpd is gracefully shutdown", time::currentstr());
+                println!("[{}] httpd is gracefully shutdown", utils::Time::currentstr());
                 return Ok(());
             }
         }

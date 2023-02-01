@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 
-use crate::{context::Context, handler::Handler};
+use crate::{http::context::Context, http::handler::Handler};
 
 #[async_trait]
 pub trait Middleware: Send + Sync {

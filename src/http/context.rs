@@ -2,7 +2,7 @@ use std::{any::Any, collections::HashMap, fmt, ops::Deref, ops::DerefMut};
 
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-use crate::{request::Request, response::Response};
+use crate::{http::request::Request, http::response::Response};
 
 pub struct RwLockWrapper(usize);
 

@@ -4,7 +4,7 @@ use std::pin::Pin;
 
 use async_trait::async_trait;
 
-use crate::context::Context;
+use crate::http::context::Context;
 
 #[async_trait]
 pub trait Handler: Send + Sync {
@@ -64,10 +64,12 @@ impl Handler for FuncHandler {
 #[macro_export]
 macro_rules! func {
     ($content:expr) => {
-        $crate::handler::FuncHandler::new(Box::new(move |_| Box::pin(async move { $content })))
+        $crate::http::handler::FuncHandler::new(Box::new(move |_| {
+            Box::pin(async move { $content })
+        }))
     };
     ($ctx:ident, $content:expr) => {
-        $crate::handler::FuncHandler::new(Box::new(move |mut $ctx| {
+        $crate::http::handler::FuncHandler::new(Box::new(move |mut $ctx| {
             Box::pin(async move { $content })
         }))
     };

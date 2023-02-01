@@ -2,11 +2,11 @@ use tokio::io::AsyncBufReadExt;
 use tokio::sync::RwLock;
 
 use crate::config::Config;
-use crate::context::Context;
-use crate::error::StatusCodeError;
-use crate::headers::Headers;
-use crate::message::{BodyBuf, Message};
-use crate::uri::ReadonlyUri;
+use crate::http::context::Context;
+use crate::http::error::StatusCodeError;
+use crate::http::headers::Headers;
+use crate::http::message::{BodyBuf, Message};
+use crate::utils::ReadonlyUri;
 
 pub struct Request {
     msg: Box<Message>,

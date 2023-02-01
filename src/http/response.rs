@@ -6,9 +6,9 @@ use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::RwLock;
 
-use crate::headers::Headers;
-use crate::message::Message;
-use crate::request::Request;
+use crate::http::headers::Headers;
+use crate::http::message::Message;
+use crate::http::request::Request;
 
 pub struct Response {
     pub(crate) msg: Message,
@@ -198,8 +198,8 @@ impl Write for Response {
 mod tests {
     use std::io::Write;
 
-    use crate::compress::CompressType;
-    use crate::response::{
+    use crate::http::compress::CompressType;
+    use crate::http::response::{
         get_reasons_map, get_status_code_reason, register_status_code, Response,
     };
 

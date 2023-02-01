@@ -54,7 +54,7 @@ macro_rules! impl_compress_encoder {
             }
         }
 
-        impl<W> $crate::compress::CompressWriter for $name
+        impl<W> $crate::http::compress::CompressWriter for $name
         where
             W: Write,
         {

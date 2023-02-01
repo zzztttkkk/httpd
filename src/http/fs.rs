@@ -2,8 +2,8 @@ use std::io::Write;
 
 use async_trait::async_trait;
 
-use crate::context::Context;
-use crate::handler::Handler;
+use crate::http::context::Context;
+use crate::http::handler::Handler;
 
 pub struct FsHandler {
     root: String,

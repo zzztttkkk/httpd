@@ -5,10 +5,10 @@ use bytebuffer::ByteBuffer;
 use flate2::Compression;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 
-use crate::compress::{CompressType, CompressWriter, Deflate, Gzip};
 use crate::config::Config;
-use crate::error::StatusCodeError;
-use crate::headers::Headers;
+use crate::http::compress::{CompressType, CompressWriter, Deflate, Gzip};
+use crate::http::error::StatusCodeError;
+use crate::http::headers::Headers;
 
 pub struct ByteBufferWrapper {
     ptr: *mut Option<ByteBuffer>,
