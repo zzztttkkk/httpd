@@ -9,7 +9,7 @@ use tokio::{io::BufStream, net::TcpStream};
 use crate::{
     config::Config,
     http::{
-        context::Context, error::HTTPError, handler::Handler, request, response::Response,
+        context::Context, error::HTTPError, handler::Handler, http2, request, response::Response,
         websocket,
     },
 };
@@ -58,7 +58,15 @@ pub async fn http11(
                                     });
                                     return;
                                 }
-                                _ => {}
+                                "http2" => {
+                                    tokio::spawn(async move{
+                                        http2::conn(stream).await;
+                                    });
+                                    return;
+                                }
+                                _ => {
+                                    return;
+                                }
                             }
                         }
                     }

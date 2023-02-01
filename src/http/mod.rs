@@ -14,6 +14,7 @@ mod mux;
 mod request;
 mod response;
 mod websocket;
+mod http2;
 
 pub use conn::conn;
 pub use handler::Handler;
