@@ -1,5 +1,6 @@
 #![allow(unused)]
 
+use std::io::Write;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -8,7 +9,6 @@ use clap::Parser;
 use tokio::net::TcpListener;
 
 use crate::config::{Args, Config};
-use crate::http::conn;
 
 mod config;
 mod http;
@@ -48,7 +48,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let alive_counter: Arc<AtomicI64> = Arc::new(AtomicI64::new(0));
-    let handler = func!({});
+
+    let handler: Box<dyn http::Handler> = func!(ctx, {
+        ctx.response().write("hello world!".as_bytes());
+    });
+
     let handler_ptr: usize = unsafe { std::mem::transmute(&handler) };
     let cfg_ptr: usize = unsafe { std::mem::transmute(&config) };
 
@@ -62,7 +66,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Ok((stream, _)) => {
                         let counter = alive_counter.clone();
                         tokio::spawn(async move {
-                            conn(stream, counter, unsafe{ std::mem::transmute(cfg_ptr) }, unsafe{ std::mem::transmute(handler_ptr) }).await;
+                            http::conn(stream, counter, unsafe{ std::mem::transmute(cfg_ptr) }, unsafe{ std::mem::transmute(handler_ptr) }).await;
                         });
                     }
                 }

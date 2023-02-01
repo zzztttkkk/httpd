@@ -46,6 +46,20 @@ impl Request {
     pub fn body(&mut self) -> Option<&mut BodyBuf> {
         self.msg.bodybuf.as_mut()
     }
+
+    pub fn upgrade_to(&mut self) -> Option<String> {
+        if self.method() != "GET" {
+            return None;
+        }
+        if let Some(conn) = self.headers().get("connection") {
+            if (conn.to_lowercase() == "upgrade") {
+                if let Some(proto_info) = self.headers().get("upgrade") {
+                    return Some(proto_info.to_ascii_lowercase());
+                }
+            }
+        }
+        None
+    }
 }
 
 pub async fn from11<Reader: AsyncBufReadExt + Unpin + Send>(

@@ -70,6 +70,7 @@ pub struct Context {
     pub(crate) _sync: RwLock<()>,
     pub(crate) _pre_stop: bool,
     pub(crate) _post_stop: bool,
+    pub(crate) _upgrade_to: Option<String>,
 }
 
 unsafe impl Send for Context {}
@@ -91,6 +92,7 @@ impl Context {
             _sync: RwLock::new(()),
             _pre_stop: false,
             _post_stop: false,
+            _upgrade_to: None,
         }
     }
 
@@ -128,5 +130,9 @@ impl Context {
                 self._post_stop = true;
             }
         }
+    }
+
+    pub fn upgrade(&mut self, proto_name: &str) {
+        self._upgrade_to = Some(proto_name.to_ascii_lowercase())
     }
 }

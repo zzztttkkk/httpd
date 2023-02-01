@@ -16,3 +16,4 @@ mod response;
 mod websocket;
 
 pub use conn::conn;
+pub use handler::Handler;

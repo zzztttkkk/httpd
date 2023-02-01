@@ -9,12 +9,8 @@ use tokio::{io::BufStream, net::TcpStream};
 use crate::{
     config::Config,
     http::{
-        context::Context,
-        error::HTTPError,
-        handler::Handler,
-        request,
-        response::Response,
-        websocket::{websocket_conn, websocket_handshake},
+        context::Context, error::HTTPError, handler::Handler, request, response::Response,
+        websocket,
     },
 };
 
@@ -47,36 +43,23 @@ pub async fn http11(
                             unsafe{std::mem::transmute(resp.as_mut())}
                         );
 
-                        if req.method() == "GET" {
-                            if let Some(conn) = req.headers().get("connection"){
-                                if (conn.to_lowercase() == "upgrade"){
-                                    if let Some(proto_info) = req.headers().get("upgrade"){
-                                        let proto_info = proto_info.to_lowercase();
-                                        if proto_info.starts_with("websocket") {
-                                            if !(websocket_handshake(&mut ctx).await){
-                                                return;
-                                            }
-
-                                            let _ = resp.to11(stream.as_mut()).await;
-                                            if let Err(_) = (stream.flush().await) {
-                                                return ;
-                                            }
-
-                                            tokio::spawn(async move {
-                                                websocket_conn(stream).await;
-                                            });
-                                            return;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
                         handler.handle(&mut ctx).await;
 
                         let _ = resp.to11(stream.as_mut()).await;
-                        if let Err(_) = (stream.flush().await) {
+                        if (stream.flush().await).is_err() {
                             return ;
+                        }
+
+                        if let Some(proto) = &ctx._upgrade_to {
+                            match proto.as_str() {
+                                "websocket" => {
+                                    tokio::spawn(async move{
+                                        websocket::conn(stream).await;
+                                    });
+                                    return;
+                                }
+                                _ => {}
+                            }
                         }
                     }
                     Err(e) => {
@@ -84,8 +67,9 @@ pub async fn http11(
                         if code < 100 {
                             return;
                         }
-                        let _ = stream.write(format!("HTTP/1.0 {} Bad Request\r\nContent-Length: 12\r\n\r\nHello World!", e).as_bytes()).await;
+                        let _ = stream.write(format!("HTTP/1.0 {} Bad Request\r\nConnection: close\r\n\r\n", code).as_bytes()).await;
                         let _ = stream.flush().await;
+                        return;
                     }
                 }
             }
