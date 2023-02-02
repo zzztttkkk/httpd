@@ -3,7 +3,7 @@ use std::io::{Read, Write};
 
 use bytebuffer::ByteBuffer;
 use flate2::Compression;
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWriteExt};
 
 use crate::config::Config;
 use crate::http::compress::{CompressType, CompressWriter, Deflate, Gzip};
@@ -199,7 +199,6 @@ impl Drop for BodyBuf {
     }
 }
 
-#[derive(Debug)]
 pub struct Message {
     pub(crate) f0: String,
     pub(crate) f1: String,
@@ -208,7 +207,7 @@ pub struct Message {
     pub(crate) bodybuf: Option<BodyBuf>,
 
     pub(crate) _output_compress_type: Option<CompressType>,
-    pub(crate) _output_chunked: bool,
+    pub(crate) _output_readobj: Option<Box<dyn AsyncRead + Send + Sync>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -230,7 +229,7 @@ impl Message {
             headers: Headers::new(),
             bodybuf: None,
             _output_compress_type: None,
-            _output_chunked: false,
+            _output_readobj: None,
         }
     }
 
@@ -539,7 +538,7 @@ impl Message {
         .await)?;
 
         let body_buf_size = self.body_buf_size();
-        if !self._output_chunked {
+        if self._output_readobj.is_none() {
             self.headers.set_content_length(body_buf_size);
         }
 
@@ -553,14 +552,18 @@ impl Message {
         (writer.write_u8(b'\r').await)?;
         (writer.write_u8(b'\n').await)?;
 
-        if body_buf_size > 0 {
-            if self._output_chunked {
-                //todo
-            } else {
-                let buf = self.bodybuf.as_ref().unwrap().raw().unwrap();
-                (Writer::write(&mut writer, buf.as_bytes()).await)?;
+        match &mut self._output_readobj {
+            Some(readobj) => {
+                todo!("direct chunked output")
+            }
+            None => {
+                if body_buf_size > 0 {
+                    let buf = self.bodybuf.as_ref().unwrap().raw().unwrap();
+                    (Writer::write(&mut writer, buf.as_bytes()).await)?;
+                }
             }
         }
+
         Ok(())
     }
 }

@@ -3,16 +3,19 @@ use std::io::{ErrorKind, Write};
 
 use async_trait::async_trait;
 use tokio::fs::ReadDir;
+use tokio::io::AsyncReadExt;
 
 use crate::http::context::Context;
 use crate::http::handler::Handler;
+
+pub type FsIndexRenderFuncType =
+    Box<dyn (Fn(&mut Context, &Vec<tokio::fs::DirEntry>) -> String) + Send + Sync>;
 
 pub struct FsHandler {
     root: String,
     prefix: String,
     disable_index: bool,
-    index_render:
-        Option<Box<dyn (Fn(&mut Context, &Vec<tokio::fs::DirEntry>) -> String) + Send + Sync>>,
+    index_render: Option<FsIndexRenderFuncType>,
 }
 
 impl FsHandler {
@@ -65,7 +68,7 @@ impl FsHandler {
                 return;
             }
             Ok(ref mut iter) => {
-                let mut ents = Vec::with_capacity(10);
+                let mut ents = Vec::with_capacity(8);
                 loop {
                     let item = iter.next_entry().await;
                     match item {
@@ -90,7 +93,6 @@ impl FsHandler {
                     None => {
                         let mut resp = ctx.response();
                         resp.headers().set_content_type("text/html");
-
                         for ele in &ents {
                             if let Some(filename) = ele.file_name().to_str() {
                                 if let Ok(ref metadata) = (ele.metadata().await) {
@@ -113,13 +115,43 @@ impl FsHandler {
         }
     }
 
-    async fn file(&self, fp: &str, metadata: &std::fs::Metadata, ctx: &mut Context) {
-        println!("File: {}", fp);
+    async fn _whole_file(&self, fp: &str, metadata: &std::fs::Metadata, ctx: &mut Context) {
+        match tokio::fs::File::open(fp).await {
+            Err(_) => {
+                ctx.response().statuscode(404);
+                return;
+            }
+            Ok(mut f) => {
+                if metadata.len() <= 200 * 1024 {
+                    let mut buf = Vec::<u8>::with_capacity(200 * 1024);
+                    buf.resize(buf.capacity(), 0);
+                    let ptr = unsafe { buf.as_mut_slice() };
+                    match f.read(ptr).await {
+                        Ok(read_size) => {
+                            if read_size as u64 != metadata.len() {
+                                ctx.response().statuscode(404);
+                                return;
+                            }
+                            ctx.response().write(&ptr[0..read_size]);
+                        }
+                        Err(_) => {
+                            ctx.response().statuscode(404);
+                        }
+                    }
+                } else {
+                    ctx.response().msg._output_readobj = Some(Box::new(f));
+                }
+            }
+        }
+    }
 
+    async fn file(&self, fp: &str, metadata: &std::fs::Metadata, ctx: &mut Context) {
         match metadata.modified() {
-            Ok(mt) => todo!(),
+            Ok(mt) => {}
             _ => {}
         }
+
+        self._whole_file(fp, metadata, ctx).await;
     }
 }
 
