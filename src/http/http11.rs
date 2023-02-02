@@ -3,7 +3,7 @@ use std::{
     sync::{atomic::AtomicI64, Arc},
     time::Duration,
 };
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt};
 
 use tokio::{io::BufStream, net::TcpStream};
 
@@ -15,13 +15,15 @@ use crate::{
     },
 };
 
-pub async fn http11(
-    stream: TcpStream,
+use super::rwstream::RwStream;
+
+pub async fn http11<T: RwStream + 'static>(
+    stream: T,
     counter: Arc<AtomicI64>,
-    cfg: &Config,
-    handler: &Box<dyn Handler>,
+    cfg: &'static Config,
+    handler: &'static Box<dyn Handler>,
 ) {
-    let bufstream: BufStream<TcpStream>;
+    let bufstream: BufStream<T>;
     if cfg.socket.read_buf_cap > 0 {
         bufstream =
             BufStream::with_capacity(cfg.socket.read_buf_cap, cfg.socket.write_buf_cap, stream)
@@ -112,7 +114,7 @@ pub async fn http11(
                             });
                             return;
                         }
-                        if code < 50 {
+                        if code < 100 {
                             return;
                         }
                         let _ = stream.write(format!("HTTP/1.0 {} Bad Request\r\nConnection: close\r\n\r\n", code).as_bytes()).await;

@@ -31,9 +31,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         addr = config.addr.clone();
     }
     let listener = TcpListener::bind(&addr).await.unwrap();
+    let mut tls_acceptor: Option<tokio_rustls::TlsAcceptor> = None;
+    let mut proto = "http";
+    if let Some(tls_cfg) = config.tls.load() {
+        tls_acceptor = Some(tokio_rustls::TlsAcceptor::from(Arc::new(tls_cfg)));
+        proto = "https"
+    }
+
     println!(
-        "[{}] httpd listening @ {}, Pid: {}",
+        "[{}] httpd listening @ {}({}), Pid: {}",
         utils::Time::currentstr(),
+        proto,
         &addr,
         std::process::id()
     );
@@ -55,8 +63,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         continue;
                     }
                     Ok((stream, _)) => {
+                        let tls_acceptor = tls_acceptor.clone();
                         let counter = alive_counter.clone();
                         tokio::spawn(async move {
+                            if let Some(tls_acceptor) = tls_acceptor {
+                                let mut tls_stream = tls_acceptor.accept(stream).await.unwrap();
+                                http::conn(tls_stream, counter, unsafe{ std::mem::transmute(cfg_ptr) }, unsafe{ std::mem::transmute(handler_ptr) }).await;
+                                return;
+                            }
                             http::conn(stream, counter, unsafe{ std::mem::transmute(cfg_ptr) }, unsafe{ std::mem::transmute(handler_ptr) }).await;
                         });
                     }

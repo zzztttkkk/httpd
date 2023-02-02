@@ -1,2 +1,6 @@
 [message]
 max_incoming_body_size = 1024
+
+[tls]
+cert = "./dist/httpd.local.pem"
+key = "./dist/httpd.local-key.pem"

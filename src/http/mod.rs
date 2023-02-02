@@ -16,6 +16,7 @@ mod request;
 mod response;
 mod websocket;
 mod ws;
+mod rwstream;
 
 pub use conn::conn;
 pub use handler::Handler;
