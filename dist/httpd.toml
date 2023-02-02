@@ -2,5 +2,5 @@
 max_incoming_body_size = 1024
 
 [tls]
-cert = "./dist/httpd.local.pem"
-key = "./dist/httpd.local-key.pem"
+cert = "./dist/httpd.local+2.pem"
+key = "./dist/httpd.local+2-key.pem"

@@ -67,8 +67,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let counter = alive_counter.clone();
                         tokio::spawn(async move {
                             if let Some(tls_acceptor) = tls_acceptor {
-                                let mut tls_stream = tls_acceptor.accept(stream).await.unwrap();
-                                http::conn(tls_stream, counter, unsafe{ std::mem::transmute(cfg_ptr) }, unsafe{ std::mem::transmute(handler_ptr) }).await;
+                                if let Ok(stream) = tls_acceptor.accept(stream).await{
+                                    http::conn(stream, counter, unsafe{ std::mem::transmute(cfg_ptr) }, unsafe{ std::mem::transmute(handler_ptr) }).await;
+                                }
                                 return;
                             }
                             http::conn(stream, counter, unsafe{ std::mem::transmute(cfg_ptr) }, unsafe{ std::mem::transmute(handler_ptr) }).await;
