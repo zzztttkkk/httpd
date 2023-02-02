@@ -11,7 +11,8 @@ pub struct FsHandler {
     root: String,
     prefix: String,
     disable_index: bool,
-    index_render: Option<Box<dyn (Fn(&Vec<tokio::fs::DirEntry>) -> String) + Send + Sync>>,
+    index_render:
+        Option<Box<dyn (Fn(&mut Context, &Vec<tokio::fs::DirEntry>) -> String) + Send + Sync>>,
 }
 
 impl FsHandler {
@@ -47,12 +48,15 @@ impl FsHandler {
     }
 
     async fn index(&self, fp: &str, metadata: &std::fs::Metadata, ctx: &mut Context) {
-        println!("Index: {}", fp);
-
         let index_path = format!("{}/index.html", fp);
         if let Ok(index_metadata) = (tokio::fs::metadata(&index_path).await) {
             self.file(&index_path, &index_metadata, ctx).await;
             return;
+        }
+
+        let mut current_dir_name = "";
+        if let Some(idx) = fp.rfind('/') {
+            current_dir_name = &fp[idx + 1..];
         }
 
         match tokio::fs::read_dir(fp).await {
@@ -81,32 +85,28 @@ impl FsHandler {
 
                 match &self.index_render {
                     Some(rfn) => {
-                        rfn(&ents);
+                        rfn(ctx, &ents);
                     }
                     None => {
                         let mut resp = ctx.response();
                         resp.headers().set_content_type("text/html");
 
-                        _ = resp.write("<html><document><body><ol>".as_bytes());
                         for ele in &ents {
                             if let Some(filename) = ele.file_name().to_str() {
-                                if let Ok(metadate) = (ele.metadata().await) {
-                                    if metadata.is_file() {
+                                if let Ok(ref metadata) = (ele.metadata().await) {
+                                    if metadata.is_file() || metadata.is_dir() {
                                         _ = resp.write(
-                                            format!("<li>./{} {}</li>", filename, metadata.len())
-                                                .as_bytes(),
+                                            format!(
+                                                "<li><a href=\"./{}/{}\">{}</a></li>",
+                                                current_dir_name, filename, filename,
+                                            )
+                                            .as_bytes(),
                                         );
-                                        continue;
-                                    }
-                                    if metadata.is_dir() {
-                                        _ = resp
-                                            .write(format!("<li>./{}/</li>", filename).as_bytes());
                                         continue;
                                     }
                                 }
                             }
                         }
-                        _ = resp.write("</ol></body></document></html>".as_bytes());
                     }
                 }
             }
