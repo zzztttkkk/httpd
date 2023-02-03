@@ -10,7 +10,10 @@ use tokio::io::AsyncReadExt;
 
 use crate::http::context::Context;
 use crate::http::handler::Handler;
-use crate::utils;
+use crate::utils::{self, Time, UtcTime};
+
+use super::headers::Headers;
+use super::request::Request;
 
 pub type FsIndexRenderFuncType =
     Box<dyn (Fn(&mut Context, &Vec<tokio::fs::DirEntry>) -> String) + Send + Sync>;
@@ -22,11 +25,11 @@ pub struct FsHandler {
     index_render: Option<FsIndexRenderFuncType>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 enum CheckCond {
     None,
     False,
-    OK,
+    True,
 }
 
 impl FsHandler {
@@ -190,6 +193,10 @@ impl FsHandler {
         return etag == etag_header_val && etag.as_bytes()[0] == '"' as u8;
     }
 
+    fn etag_weak_match(etag: &str, etag_header_val: &str) -> bool {
+        return etag.trim_start_matches("W/") == etag_header_val.trim_start_matches("W/");
+    }
+
     fn check_if_match(ctx: &mut Context) -> CheckCond {
         match ctx.request().headers().get("if-match") {
             None => {
@@ -216,7 +223,7 @@ impl FsHandler {
                         continue;
                     }
                     if fb == '*' as u8 {
-                        return CheckCond::OK;
+                        return CheckCond::True;
                     }
 
                     let (etag, remain) = Self::scan_etag(val);
@@ -225,7 +232,7 @@ impl FsHandler {
                     }
 
                     if Self::etag_strong_match(etag, etag_header_val) {
-                        return CheckCond::OK;
+                        return CheckCond::True;
                     }
                     val = remain;
                 }
@@ -235,45 +242,222 @@ impl FsHandler {
         return CheckCond::False;
     }
 
-    fn check_if_unmodified_since(
-        modified_time: &Option<SystemTime>,
-        ctx: &mut Context,
-    ) -> CheckCond {
+    fn check_if_unmodified_since(ctx: &mut Context, modified_time: Option<UtcTime>) -> CheckCond {
+        if modified_time.is_none() {
+            return CheckCond::None;
+        }
+        let modified_time = modified_time.unwrap();
+
         match ctx.request().headers().get("if-unmodified-since") {
             None => {
                 return CheckCond::None;
             }
-            Some(val) => {
-                chrono::DateTime::parse_from_str(val.as_str(), "");
+            Some(val) => match utils::Time::parse_from_header_value(val) {
+                None => {
+                    return CheckCond::None;
+                }
+                Some(iust) => {
+                    if modified_time <= iust {
+                        return CheckCond::True;
+                    }
+                    return CheckCond::False;
+                }
+            },
+        }
+    }
+
+    fn check_if_none_match(ctx: &mut Context) -> CheckCond {
+        match ctx.request().headers().get("if-none-match") {
+            Some(inm) => {
+                let mut req = ctx.request();
+                let etag_header_val = req.headers().get("etag");
+                if etag_header_val.is_none() {
+                    return CheckCond::False;
+                }
+                let etag_header_val = etag_header_val.unwrap().as_str();
+
+                let mut tmp = inm.as_str();
+                loop {
+                    tmp = tmp.trim();
+                    if tmp.is_empty() {
+                        break;
+                    }
+                    let fb = tmp.as_bytes()[0];
+                    if fb == ',' as u8 {
+                        tmp = &tmp[1..];
+                        continue;
+                    }
+                    if fb == '*' as u8 {
+                        return CheckCond::False;
+                    }
+
+                    let (etag, remain) = Self::scan_etag(tmp);
+                    if etag.is_empty() {
+                        return CheckCond::False;
+                    }
+                    if Self::etag_weak_match(etag, etag_header_val) {
+                        return CheckCond::False;
+                    }
+                    tmp = remain;
+                }
+                return CheckCond::True;
+            }
+            None => {
+                return CheckCond::None;
+            }
+        }
+    }
+
+    fn write_not_modified(ctx: &mut Context) {
+        let mut resp = ctx.response();
+        resp.headers().remove("content-type");
+        resp.headers().remove("content-length");
+        resp.headers().remove("content-encoding");
+        if let Some(v) = resp.headers().get("etag") {
+            if v.is_empty() {
+                resp.headers().remove("last-modified");
+            }
+        }
+        resp.statuscode(304);
+    }
+
+    fn check_if_modified_since(ctx: &mut Context, modified_time: Option<UtcTime>) -> CheckCond {
+        if modified_time.is_none() {
+            return CheckCond::None;
+        }
+        let modified_time = modified_time.unwrap();
+
+        let mut req = ctx.request();
+        if req.method() != "GET" && req.method() != "HEAD" {
+            return CheckCond::None;
+        }
+
+        match req.headers().get("if-modified-since") {
+            None => {
+                return CheckCond::None;
+            }
+            Some(ims) => match Time::parse_from_header_value(ims) {
+                None => {
+                    return CheckCond::None;
+                }
+                Some(t) => {
+                    if modified_time <= t {
+                        return CheckCond::False;
+                    }
+                    return CheckCond::True;
+                }
+            },
+        }
+    }
+
+    fn check_if_range(ctx: &mut Context, modified_time: Option<UtcTime>) -> CheckCond {
+        let mut req = ctx.request();
+        let req_ptr: usize = unsafe { std::mem::transmute(req.ptr()) };
+
+        if req.method() != "GET" && req.method() != "HEAD" {
+            return CheckCond::False;
+        }
+
+        match req.headers().get("if-range") {
+            None => {
+                return CheckCond::None;
+            }
+            Some(ir) => {
+                let (etag, _) = Self::scan_etag(ir);
+                if !etag.is_empty() {
+                    let tmp_req_ref: &mut Request = unsafe { std::mem::transmute(req_ptr) };
+                    let etag_header_val = tmp_req_ref.headers().get("etag");
+                    if etag_header_val.is_none() {
+                        return CheckCond::False;
+                    }
+                    let etag_header_val = etag_header_val.unwrap().as_str();
+                    if Self::etag_strong_match(etag, etag_header_val) {
+                        return CheckCond::True;
+                    }
+                    return CheckCond::False;
+                }
+
+                if modified_time.is_none() {
+                    return CheckCond::False;
+                }
+                let modified_time = modified_time.unwrap();
+
+                match Time::parse_from_header_value(ir) {
+                    None => {
+                        return CheckCond::False;
+                    }
+                    Some(t) => {
+                        if modified_time <= t {
+                            return CheckCond::True;
+                        }
+                        return CheckCond::False;
+                    }
+                }
             }
         }
 
         CheckCond::False
     }
 
-    fn check_preconditions(modified_time: &Option<SystemTime>, ctx: &mut Context) {
+    fn check_preconditions<'a, 'b: 'a>(
+        ctx: &'b mut Context,
+        headers: &'b Headers,
+        modified_time: Option<UtcTime>,
+    ) -> (bool, &'a str) {
         let mut ch = Self::check_if_match(ctx);
-        match ch {
-            CheckCond::None => {
-                ch = Self::check_if_unmodified_since(modified_time, ctx);
+        if ch == CheckCond::None {
+            ch = Self::check_if_unmodified_since(ctx, modified_time);
+        }
+        if ch == CheckCond::False {
+            ctx.response().statuscode(412);
+            return (true, "");
+        }
+
+        match Self::check_if_none_match(ctx) {
+            CheckCond::False => {
+                let req = ctx.request();
+                if req.method() == "GET" || req.method() == "HEAD" {
+                    Self::write_not_modified(ctx);
+                    return (true, "");
+                }
+                ctx.response().statuscode(412);
+                return (true, "");
             }
-            CheckCond::False => {}
+            CheckCond::None => {
+                if Self::check_if_modified_since(ctx, modified_time) == CheckCond::False {
+                    Self::write_not_modified(ctx);
+                    return (true, "");
+                }
+            }
             _ => {}
+        }
+
+        match headers.get("range") {
+            None => {
+                return (false, "");
+            }
+            Some(rh) => {
+                if Self::check_if_range(ctx, modified_time) == CheckCond::False {
+                    return (false, "");
+                }
+                return (false, rh);
+            }
         }
     }
 
     async fn file(&self, fp: &str, metadata: &std::fs::Metadata, ctx: &mut Context) {
-        let mut modified_time: Option<SystemTime> = None;
+        let mut modified_time: Option<UtcTime> = None;
         if let Ok(mt) = metadata.modified() {
             if !is_zero_time(&mt) {
                 ctx.response()
                     .headers()
                     .set("last-modified", &to_time_string(&mt));
-                modified_time = Some(mt);
+                modified_time = Some(Time::utc_from(&mt));
             }
         }
 
-        Self::check_preconditions(&modified_time, ctx);
+        let mut req = ctx.request();
+        Self::check_preconditions(ctx, req.headers(), modified_time);
 
         self._whole_file(fp, metadata, ctx).await;
     }
@@ -319,7 +503,7 @@ impl Handler for FsHandler {
 #[inline]
 fn is_zero_time(st: &SystemTime) -> bool {
     return match st.duration_since(UNIX_EPOCH) {
-        Ok(d) => d.as_millis() == 0,
+        Ok(d) => d.as_secs() == 0,
         Err(_) => true,
     };
 }

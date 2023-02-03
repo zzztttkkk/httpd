@@ -1,5 +1,6 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use chrono::TimeZone;
 use once_cell::sync::Lazy;
 
 pub type LocalTime = chrono::DateTime<chrono::Local>;
@@ -50,8 +51,16 @@ impl Time {
         chrono::DateTime::from_utc(naive, chrono::Utc)
     }
 
-    pub fn parse_from_header_value(txt: &str) {
-        for layout in (HTTP_HEADER_TIME_LAYOUTS).iter() {}
+    pub fn parse_from_header_value(txt: &str) -> Option<UtcTime> {
+        for layout in HTTP_HEADER_TIME_LAYOUTS.iter() {
+            match chrono::DateTime::parse_from_str(txt, &layout) {
+                Err(_) => {}
+                Ok(t) => {
+                    return Some(chrono::DateTime::from(t));
+                }
+            };
+        }
+        return None;
     }
 }
 
