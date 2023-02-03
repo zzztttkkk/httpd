@@ -1,5 +1,8 @@
+// Go SDK 1.19.4 src/net/http/fs/go
+
 use std::future::Future;
 use std::io::{ErrorKind, Write};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 use tokio::fs::ReadDir;
@@ -7,6 +10,7 @@ use tokio::io::AsyncReadExt;
 
 use crate::http::context::Context;
 use crate::http::handler::Handler;
+use crate::utils;
 
 pub type FsIndexRenderFuncType =
     Box<dyn (Fn(&mut Context, &Vec<tokio::fs::DirEntry>) -> String) + Send + Sync>;
@@ -16,6 +20,13 @@ pub struct FsHandler {
     prefix: String,
     disable_index: bool,
     index_render: Option<FsIndexRenderFuncType>,
+}
+
+#[derive(Clone, Copy)]
+enum CheckCond {
+    None,
+    False,
+    OK,
 }
 
 impl FsHandler {
@@ -145,11 +156,124 @@ impl FsHandler {
         }
     }
 
-    async fn file(&self, fp: &str, metadata: &std::fs::Metadata, ctx: &mut Context) {
-        match metadata.modified() {
-            Ok(mt) => {}
+    async fn _part_file(
+        &self,
+        fp: &str,
+        metadata: &std::fs::Metadata,
+        ctx: &mut Context,
+        begin: usize,
+        end: usize,
+    ) {
+    }
+
+    fn scan_etag<'a, 'b: 'a>(mut s: &'b str) -> (&'a str, &'a str) {
+        s = s.trim();
+        let mut start: usize = 0;
+        if s.starts_with("W/") {
+            start = 2;
+        }
+        if s.len() <= 2 || s.as_bytes()[start] != '"' as u8 {
+            return ("", "");
+        }
+        s = &s[start + 1..];
+        match s.find('"') {
+            Some(idx) => {
+                return (&s[..idx], &s[idx + 1..]);
+            }
+            None => {
+                return ("", "");
+            }
+        }
+    }
+
+    fn etag_strong_match(etag: &str, etag_header_val: &str) -> bool {
+        return etag == etag_header_val && etag.as_bytes()[0] == '"' as u8;
+    }
+
+    fn check_if_match(ctx: &mut Context) -> CheckCond {
+        match ctx.request().headers().get("if-match") {
+            None => {
+                return CheckCond::None;
+            }
+            Some(val) => {
+                let mut req = ctx.request();
+                let etag_header_val = req.headers().get("etag");
+                if etag_header_val.is_none() {
+                    return CheckCond::False;
+                }
+                let etag_header_val = etag_header_val.unwrap().as_str();
+
+                let mut val = val.as_str();
+                loop {
+                    val = val.trim();
+                    if val.is_empty() {
+                        return CheckCond::None;
+                    }
+
+                    let fb = val.as_bytes()[0];
+                    if fb == ',' as u8 {
+                        val = &val[1..];
+                        continue;
+                    }
+                    if fb == '*' as u8 {
+                        return CheckCond::OK;
+                    }
+
+                    let (etag, remain) = Self::scan_etag(val);
+                    if etag.is_empty() {
+                        break;
+                    }
+
+                    if Self::etag_strong_match(etag, etag_header_val) {
+                        return CheckCond::OK;
+                    }
+                    val = remain;
+                }
+            }
+        }
+
+        return CheckCond::False;
+    }
+
+    fn check_if_unmodified_since(
+        modified_time: &Option<SystemTime>,
+        ctx: &mut Context,
+    ) -> CheckCond {
+        match ctx.request().headers().get("if-unmodified-since") {
+            None => {
+                return CheckCond::None;
+            }
+            Some(val) => {
+                chrono::DateTime::parse_from_str(val.as_str(), "");
+            }
+        }
+
+        CheckCond::False
+    }
+
+    fn check_preconditions(modified_time: &Option<SystemTime>, ctx: &mut Context) {
+        let mut ch = Self::check_if_match(ctx);
+        match ch {
+            CheckCond::None => {
+                ch = Self::check_if_unmodified_since(modified_time, ctx);
+            }
+            CheckCond::False => {}
             _ => {}
         }
+    }
+
+    async fn file(&self, fp: &str, metadata: &std::fs::Metadata, ctx: &mut Context) {
+        let mut modified_time: Option<SystemTime> = None;
+        if let Ok(mt) = metadata.modified() {
+            if !is_zero_time(&mt) {
+                ctx.response()
+                    .headers()
+                    .set("last-modified", &to_time_string(&mt));
+                modified_time = Some(mt);
+            }
+        }
+
+        Self::check_preconditions(&modified_time, ctx);
 
         self._whole_file(fp, metadata, ctx).await;
     }
@@ -190,4 +314,17 @@ impl Handler for FsHandler {
             }
         }
     }
+}
+
+#[inline]
+fn is_zero_time(st: &SystemTime) -> bool {
+    return match st.duration_since(UNIX_EPOCH) {
+        Ok(d) => d.as_millis() == 0,
+        Err(_) => true,
+    };
+}
+
+fn to_time_string(st: &SystemTime) -> String {
+    let ut = utils::Time::utc_from(st);
+    return ut.format("%a, %d %b %Y %H:%M:%S GMT").to_string();
 }
