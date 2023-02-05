@@ -20,6 +20,8 @@ static mut _REASONS_MAP_INIT_LOCK: AtomicBool = AtomicBool::new(false);
 static mut _REASONS_MAP: Option<RwLock<HashMap<u32, String>>> = None;
 
 fn all_std_status_codes() -> Vec<&'static str> {
+    // https://developer.mozilla.org/en-US/docs/Web/HTTP/Status
+    // JSON.stringify(Array.from(temp1.querySelectorAll("li a code")).map(v => v.innerText), null, 2)
     vec![
         "100 Continue",
         "101 Switching Protocols",
@@ -134,7 +136,7 @@ impl Response {
     pub fn default(req: &mut Request, disable_compression: bool) -> Box<Self> {
         let mut resp = Box::new(Self::new());
         if (!disable_compression) {
-            resp.msg._output_compress_type = req.headers().out_going_compress_type();
+            resp.msg.output_compress_type = req.headers().out_going_compress_type();
         }
         resp
     }
@@ -206,7 +208,7 @@ mod tests {
     #[test]
     fn resp_wf() {
         let mut resp = Response::new();
-        resp.msg._output_compress_type = Some(CompressType::Gzip);
+        resp.msg.output_compress_type = Some(CompressType::Gzip);
 
         let _ = resp.write("hello".repeat(10).as_bytes()).unwrap();
         resp.flush().unwrap();

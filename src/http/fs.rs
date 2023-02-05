@@ -1,17 +1,21 @@
 // Go SDK 1.19.4 src/net/http/fs/go
 
+use std::collections::HashMap;
 use std::future::Future;
 use std::io::{ErrorKind, Write};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
+use once_cell::sync::Lazy;
 use tokio::fs::ReadDir;
 use tokio::io::AsyncReadExt;
 
 use crate::http::context::Context;
 use crate::http::handler::Handler;
+use crate::http::message::Range;
 use crate::utils::{self, Time, UtcTime};
 
+use super::context::RequestRawPtr;
 use super::headers::Headers;
 use super::request::Request;
 
@@ -23,6 +27,7 @@ pub struct FsHandler {
     prefix: String,
     disable_index: bool,
     index_render: Option<FsIndexRenderFuncType>,
+    small_file_size: u64,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -61,6 +66,7 @@ impl FsHandler {
             prefix,
             disable_index: false,
             index_render: None,
+            small_file_size: 200 * 1024,
         })
     }
 
@@ -111,12 +117,12 @@ impl FsHandler {
                             if let Some(filename) = ele.file_name().to_str() {
                                 if let Ok(ref metadata) = (ele.metadata().await) {
                                     if metadata.is_file() || metadata.is_dir() {
-                                        _ = resp.write(
+                                        let _ = resp.write(
                                             format!(
                                                 "<li><a href=\"./{}/{}\">{}</a></li>",
                                                 current_dir_name, filename, filename,
                                             )
-                                            .as_bytes(),
+                                                .as_bytes(),
                                         );
                                         continue;
                                     }
@@ -129,14 +135,13 @@ impl FsHandler {
         }
     }
 
-    async fn _whole_file(&self, fp: &str, metadata: &std::fs::Metadata, ctx: &mut Context) {
+    async fn whole_file(&self, fp: &str, metadata: &std::fs::Metadata, ctx: &mut Context) {
         match tokio::fs::File::open(fp).await {
             Err(_) => {
                 ctx.response().statuscode(404);
-                return;
             }
             Ok(mut f) => {
-                if metadata.len() <= 200 * 1024 {
+                if metadata.len() <= self.small_file_size {
                     let mut buf = Vec::<u8>::with_capacity(200 * 1024);
                     buf.resize(buf.capacity(), 0);
                     let ptr = unsafe { buf.as_mut_slice() };
@@ -153,20 +158,10 @@ impl FsHandler {
                         }
                     }
                 } else {
-                    ctx.response().msg._output_readobj = Some(Box::new(f));
+                    ctx.response().msg.output_readobj = Some(Box::new(f));
                 }
             }
         }
-    }
-
-    async fn _part_file(
-        &self,
-        fp: &str,
-        metadata: &std::fs::Metadata,
-        ctx: &mut Context,
-        begin: usize,
-        end: usize,
-    ) {
     }
 
     fn scan_etag<'a, 'b: 'a>(mut s: &'b str) -> (&'a str, &'a str) {
@@ -445,6 +440,131 @@ impl FsHandler {
         }
     }
 
+    fn mime(fp: &str) -> &'static str {
+        let mut idx = fp.len();
+        let mut found_dot = false;
+        for c in fp.as_bytes().iter().rev() {
+            idx -= 1;
+            if *c == '.' as u8 {
+                found_dot = true;
+                break;
+            }
+            if fp.len() - idx >= 16 {
+                break;
+            }
+        }
+
+        if found_dot {
+            let last_ext = (&fp[idx..]).to_lowercase();
+            match utils::COMMON_MIME_TYPES.get(&last_ext) {
+                Some(mime) => {
+                    return mime;
+                }
+                None => {}
+            }
+        }
+
+        return "application/octet-stream";
+    }
+
+    fn parse_u64(s: &str, max: u64) -> Option<u64> {
+        if s.is_empty() || s.as_bytes()[0] == '-' as u8 {
+            return None;
+        }
+        return match s.parse::<u64>() {
+            Ok(num) => {
+                if max > 0 && num >= max {
+                    None
+                } else {
+                    Some(num)
+                }
+            }
+            Err(_) => None,
+        };
+    }
+
+    fn parse_range(mut range_header: &str, size: u64) -> Result<Option<Vec<Range>>, bool> {
+        range_header = range_header.trim();
+        if range_header.is_empty() {
+            return Ok(None);
+        }
+        if !range_header.starts_with("bytes=") {
+            return Err(false);
+        }
+        range_header = &range_header[6..];
+
+        let mut ranges: Vec<Range> = vec![];
+        let mut no_overlap = false;
+        for mut part in range_header.split(",") {
+            part = part.trim();
+            match part.find('-') {
+                None => {
+                    return Err(false);
+                }
+                Some(idx) => {
+                    let mut start = &part[0..idx];
+                    let mut end = &part[idx + 1..];
+                    start = start.trim();
+                    end = end.trim();
+
+                    let mut range = Range::default();
+
+                    if start.is_empty() {
+                        match Self::parse_u64(end, size) {
+                            Some(num) => {
+                                range.begin = size - num;
+                                range.length = size - range.begin;
+                            }
+                            None => {
+                                return Err(false);
+                            }
+                        }
+                    } else {
+                        match start.parse::<i64>() {
+                            Err(_) => {
+                                return Err(false);
+                            }
+                            Ok(v) => {
+                                if v < 0 {
+                                    return Err(false);
+                                }
+                                let v = v as u64;
+                                if v >= size {
+                                    no_overlap = true;
+                                    continue;
+                                }
+
+                                range.begin = v;
+                                if end.is_empty() {
+                                    range.length = size - v;
+                                } else {
+                                    match Self::parse_u64(end, 0) {
+                                        None => {
+                                            return Err(false);
+                                        }
+                                        Some(mut num) => {
+                                            if num >= size {
+                                                num = size - 1;
+                                            }
+                                            range.length = num - range.begin + 1;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    ranges.push(range);
+                }
+            }
+        }
+
+        if no_overlap && ranges.is_empty() {
+            return Err(true);
+        }
+        Ok(Some(ranges))
+    }
+
     async fn file(&self, fp: &str, metadata: &std::fs::Metadata, ctx: &mut Context) {
         let mut modified_time: Option<UtcTime> = None;
         if let Ok(mt) = metadata.modified() {
@@ -457,9 +577,50 @@ impl FsHandler {
         }
 
         let mut req = ctx.request();
-        Self::check_preconditions(ctx, req.headers(), modified_time);
+        let mut reqc = req;
+        let mut resp = ctx.response();
+        let (done, range_header) = Self::check_preconditions(ctx, reqc.headers(), modified_time);
+        if done {
+            return;
+        }
 
-        self._whole_file(fp, metadata, ctx).await;
+        let mut code = 200;
+        let mut ctype: &str = "";
+        match req.headers().get("content-type") {
+            None => {
+                ctype = Self::mime(fp);
+                resp.headers().set_content_type(ctype);
+            }
+            Some(cv) => {
+                ctype = cv;
+            }
+        }
+
+        let file_size = metadata.len();
+        let mut send_size = file_size;
+
+        match Self::parse_range(range_header, send_size) {
+            Err(no_overlap) => {
+                if no_overlap {
+                    resp.headers()
+                        .set("content-range", format!("bytes */{}", file_size).as_str())
+                }
+                resp.statuscode(416);
+                return;
+            }
+            Ok(ranges) => {
+                if let Some(ranges) = ranges {
+                    if !ranges.is_empty() {
+                        ctx.response().msg.output_ranges = Some(ranges);
+                        ctx.response().msg.output_content_type = ctype.to_string();
+                        return;
+                    }
+                }
+            }
+        }
+
+        ctx.response().headers().set_content_type(ctype);
+        self.whole_file(fp, metadata, ctx).await;
     }
 }
 

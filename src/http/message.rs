@@ -199,6 +199,19 @@ impl Drop for BodyBuf {
     }
 }
 
+#[derive(Default)]
+pub struct Range {
+    pub begin: u64,
+    pub length: u64,
+}
+
+pub(crate) struct OutputOpts {
+    pub(crate) compress_type: Option<CompressType>,
+    pub(crate) readobj: Option<Box<dyn AsyncRead + Send + Sync>>,
+    pub(crate) ranges: Option<Vec<Range>>,
+    pub(crate) content_type: String,
+}
+
 pub struct Message {
     pub(crate) f0: String,
     pub(crate) f1: String,
@@ -206,8 +219,7 @@ pub struct Message {
     pub(crate) headers: Headers,
     pub(crate) bodybuf: Option<BodyBuf>,
 
-    pub(crate) _output_compress_type: Option<CompressType>,
-    pub(crate) _output_readobj: Option<Box<dyn AsyncRead + Send + Sync>>,
+    pub(crate) output_opts: Option<OutputOpts>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -228,8 +240,7 @@ impl Message {
             f2: "".to_string(),
             headers: Headers::new(),
             bodybuf: None,
-            _output_compress_type: None,
-            _output_readobj: None,
+            output_opts: None,
         }
     }
 
@@ -538,7 +549,7 @@ impl Message {
         .await)?;
 
         let body_buf_size = self.body_buf_size();
-        if self._output_readobj.is_none() {
+        if self.output_opts.is_none() || self.output_opts.as_ref().unwrap().readobj.is_none() {
             self.headers.set_content_length(body_buf_size);
         }
 
@@ -552,7 +563,7 @@ impl Message {
         (writer.write_u8(b'\r').await)?;
         (writer.write_u8(b'\n').await)?;
 
-        match &mut self._output_readobj {
+        match &mut self.output_opts {
             Some(readobj) => {
                 todo!("direct chunked output")
             }
@@ -579,7 +590,7 @@ impl Write for Message {
 
         let body = self.bodybuf.as_mut().unwrap();
         if init {
-            if let Some(ct) = self._output_compress_type {
+            if let Some(ct) = self.output_compress_type {
                 body.begincompress(ct, Compression::default());
                 self.headers.set_content_encoding(ct);
             }
@@ -596,7 +607,7 @@ impl Write for Message {
 
         let body = self.bodybuf.as_mut().unwrap();
         let result = body.flush();
-        if self._output_compress_type.is_some() {
+        if self.output_compress_type.is_some() {
             match body.finishcompress() {
                 Ok(_) => {}
                 Err(e) => {

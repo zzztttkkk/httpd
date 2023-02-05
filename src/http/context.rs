@@ -53,10 +53,12 @@ macro_rules! impl_for_raw_ptr {
     };
 }
 
+#[derive(Clone, Copy)]
 pub struct RequestRawPtr(usize);
 
 impl_for_raw_ptr!(RequestRawPtr, Request);
 
+#[derive(Clone, Copy)]
 pub struct ResponseRawPtr(usize);
 
 impl_for_raw_ptr!(ResponseRawPtr, Response);
