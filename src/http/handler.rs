@@ -1,76 +1,72 @@
 use std::future::Future;
-use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
 
 use async_trait::async_trait;
 
-use crate::http::context::Context;
+use crate::http::ctx::Context;
 
-#[async_trait]
-pub trait Handler: Send + Sync {
-    async fn handle(&self, ctx: &mut Context);
+type FutureType<'a> = Pin<Box<dyn Future<Output=()> + Sync + Send + 'a>>;
+
+
+pub trait Handler {
+    fn handler<'a: 'b, 'b>(&self, ctx: &'a mut Context) -> FutureType<'b>;
 }
 
-macro_rules! impl_for_raw_ptr {
-    ($name:ident, $target:tt) => {
-        impl Deref for $name {
-            type Target = $target;
+struct FnHandler(Box<dyn Fn(&mut Context) -> FutureType + Send + Sync>);
 
-            fn deref(&self) -> &Self::Target {
-                unsafe { std::mem::transmute(self.0) }
-            }
-        }
-
-        impl DerefMut for $name {
-            fn deref_mut(&mut self) -> &mut Self::Target {
-                unsafe { std::mem::transmute(self.0) }
-            }
-        }
-
-        impl $name {
-            pub(crate) fn new(v: usize) -> Self {
-                Self(v)
-            }
-
-            pub fn ptr(&self) -> *const Self {
-                unsafe { std::mem::transmute(self.0) }
-            }
-        }
-    };
-}
-
-pub(crate) struct CtxRawPtr(usize);
-
-impl_for_raw_ptr!(CtxRawPtr, Context);
-
-type HandlerFnFutureType = Pin<Box<dyn Future<Output = ()> + Send>>;
-type HandlerFnType = Box<dyn (Fn(CtxRawPtr) -> HandlerFnFutureType) + Send + Sync>;
-
-pub struct FuncHandler(HandlerFnType);
-
-impl FuncHandler {
-    pub(crate) fn new(f: HandlerFnType) -> Box<Self> {
-        Box::new(Self(f))
+impl Handler for FnHandler {
+    fn handler<'a: 'b, 'b>(&self, ctx: &'a mut Context) -> FutureType<'b> {
+        (self.0)(ctx)
     }
 }
 
-#[async_trait]
-impl Handler for FuncHandler {
-    async fn handle(&self, ctx: &mut Context) {
-        unsafe { ((self.0)(CtxRawPtr(std::mem::transmute(ctx)))).await }
-    }
-}
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
 
-#[macro_export]
-macro_rules! func {
-    ($content:expr) => {
-        $crate::http::handler::FuncHandler::new(Box::new(move |_| {
-            Box::pin(async move { $content })
-        }))
-    };
-    ($ctx:ident, $content:expr) => {
-        $crate::http::handler::FuncHandler::new(Box::new(move |mut $ctx| {
-            Box::pin(async move { $content })
-        }))
-    };
+    use tokio::sync::Mutex;
+
+    use crate::http::ctx::Context;
+    use crate::http::handler::{FnHandler, Handler};
+
+    #[test]
+    fn x() {
+        let handler = FnHandler(Box::new(|ctx| {
+            Box::pin(async move {
+                ctx.x();
+            })
+        }));
+        let handler: Box<dyn Handler> = Box::new(handler);
+
+        tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async move {
+            let mut ctx = Context::default();
+            handler.handler(&mut ctx).await;
+        });
+
+        let x = Arc::new(Mutex::new(1));
+        let y = x.clone();
+        let handler = FnHandler(Box::new(move |ctx| {
+            let x = y.clone();
+            Box::pin(async move {
+                let mut xv = x.lock().await;
+                *xv += 1;
+                ctx.x();
+                println!("X: {}", *xv);
+            })
+        }));
+        let handler: Box<dyn Handler> = Box::new(handler);
+
+        tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async move {
+            let mut ctx = Context::default();
+            for _ in 0..100 {
+                handler.handler(&mut ctx).await;
+            }
+        });
+
+        let x = x.clone();
+        tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async move {
+            let xv = x.lock().await;
+            println!("------:{}", *xv);
+        });
+    }
 }

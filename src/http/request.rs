@@ -1,74 +1,16 @@
-use tokio::io::AsyncBufReadExt;
-use tokio::sync::RwLock;
+use std::sync::Arc;
+use std::time::Duration;
 
-use crate::config::Config;
-use crate::http::context::Context;
-use crate::http::error::StatusCodeError;
-use crate::http::headers::Headers;
-use crate::http::message::{BodyBuf, Message};
-use crate::utils::ReadonlyUri;
+use tokio::io::{AsyncBufReadExt, AsyncReadExt};
+use tokio::sync::Mutex;
 
-pub struct Request {
-    msg: Box<Message>,
-    _uri: Option<ReadonlyUri>,
-}
+pub struct Request {}
 
 impl Request {
-    #[inline(always)]
-    pub fn method(&self) -> &str {
-        self.msg.f0.as_str()
-    }
+    pub async fn from11<R: AsyncBufReadExt + Unpin>(reader: Arc<Mutex<R>>) -> Result<Box<Request>, i32> {
+        let mut reader = reader.lock().await;
+        let v = reader.read_u8().await;
 
-    #[inline(always)]
-    pub fn rawpath(&self) -> &str {
-        self.msg.f1.as_str()
+        Err(12)
     }
-
-    #[inline(always)]
-    pub fn protoversion(&self) -> &str {
-        self.msg.f2.as_str()
-    }
-
-    #[inline(always)]
-    pub fn uri(&mut self) -> &mut ReadonlyUri {
-        if self._uri.is_none() {
-            self._uri = Some(ReadonlyUri::new(self.rawpath()));
-        }
-        return self._uri.as_mut().unwrap();
-    }
-
-    #[inline(always)]
-    pub fn headers(&mut self) -> &mut Headers {
-        &mut self.msg.headers
-    }
-
-    #[inline(always)]
-    pub fn body(&mut self) -> Option<&mut BodyBuf> {
-        self.msg.bodybuf.as_mut()
-    }
-
-    pub fn upgrade_to(&mut self) -> Option<String> {
-        if self.method() != "GET" {
-            return None;
-        }
-        if let Some(conn) = self.headers().get("connection") {
-            if (conn.to_lowercase() == "upgrade") {
-                if let Some(proto_info) = self.headers().get("upgrade") {
-                    return Some(proto_info.to_ascii_lowercase());
-                }
-            }
-        }
-        None
-    }
-}
-
-pub async fn from11<Reader: AsyncBufReadExt + Unpin + Send>(
-    reader: Reader,
-    buf: &mut String,
-    cfg: &Config,
-) -> Result<Box<Request>, StatusCodeError> {
-    return match Message::from11(reader, buf, cfg).await {
-        Ok(msg) => Ok(Box::new(Request { msg, _uri: None })),
-        Err(e) => Err(e),
-    };
 }

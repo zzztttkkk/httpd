@@ -1,126 +1,26 @@
-use std::{
-    pin::Pin,
-    sync::{Arc, atomic::AtomicI64},
-    time::Duration,
-};
+use std::sync::Arc;
 
-use tokio::{io::BufStream, net::TcpStream};
-use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, BufStream};
+use tokio::sync::Mutex;
 
-use crate::{
-    config::Config,
-    http::{
-        context::Context, error::HTTPError, handler::Handler, http2, message, request,
-        response::Response, websocket,
-    },
-};
+use crate::http::ctx::Context;
+use crate::http::handler::Handler;
+use crate::http::request::Request;
+use crate::http::rwtypes::AsyncStream;
 
-use super::rwstream::RwStream;
-
-pub async fn http11<T: RwStream + 'static>(
-    stream: T,
-    counter: Arc<AtomicI64>,
-    cfg: &'static Config,
-    handler: &'static Box<dyn Handler>,
-) {
-    let bufstream: BufStream<T>;
-    if cfg.socket.read_buf_cap > 0 {
-        bufstream =
-            BufStream::with_capacity(cfg.socket.read_buf_cap, cfg.socket.write_buf_cap, stream)
-    } else {
-        bufstream = BufStream::new(stream);
-    }
-
-    let mut stream = Box::pin(bufstream);
-    let mut rbuf = String::with_capacity(cfg.message.read_buf_cap);
-
+async fn http11<T: AsyncStream>(stream: T, handler: Arc<dyn Handler>) {
+    let rawstream = Arc::new(Mutex::new(BufStream::with_capacity(4096, 4096, stream)));
     loop {
-        tokio::select! {
-            from_result = request::from11(stream.as_mut(), &mut rbuf, cfg) => {
-                match from_result {
-                    Ok(mut req) => {
-                        let resp = Response::default(&mut req, cfg.message.disbale_compression);
-                        let mut ctx = Context::new(&req, &resp);
-
-                        handler.handle(&mut ctx).await;
-
-                        let _ = ctx._resp.to11(stream.as_mut()).await;
-                        if (stream.flush().await).is_err() {
-                            return ;
-                        }
-
-                        if let Some(proto) = &ctx._upgrade_to {
-                            match proto.as_str() {
-                                "websocket" => {
-                                    tokio::spawn(async move{
-                                        websocket::conn(stream).await;
-                                    });
-                                    return;
-                                }
-                                ("h2c"| "http2"| "h2") => {
-                                    tokio::spawn(async move{
-                                        http2::conn(stream).await;
-                                    });
-                                    return;
-                                }
-                                _ => {
-                                    return;
-                                }
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        let code = e.statuscode();
-                        if code == message::READ_MSG_ERROR_MAYBE_HTTP2 {
-                            rbuf.clear();
-                            match stream.read_line(&mut rbuf).await {
-                                Ok(line_size) => {
-                                    if line_size != 2 {
-                                        return;
-                                    }
-                                },
-                                Err(_) => {
-                                    return;
-                                }
-                            }
-                            rbuf.clear();
-                            match stream.read_line(&mut rbuf).await {
-                                Ok(line_size) => {
-                                    if line_size != 4 || &rbuf[0..2] != "SM" {
-                                        return;
-                                    }
-                                },
-                                Err(_) => {
-                                    return;
-                                }
-                            }
-                            rbuf.clear();
-                            match stream.read_line(&mut rbuf).await {
-                                Ok(line_size) => {
-                                    if line_size != 2 {
-                                        return ;
-                                    }
-                                },
-                                Err(_) => {
-                                    return;
-                                }
-                            }
-                            tokio::spawn(async move{
-                                http2::conn(stream).await;
-                            });
-                            return;
-                        }
-                        if code < 100 {
-                            return;
-                        }
-                        let _ = stream.write(format!("HTTP/1.0 {} Bad Request\r\nConnection: close\r\n\r\n", code).as_bytes()).await;
-                        let _ = stream.flush().await;
-                        return;
-                    }
-                }
+        let stream = rawstream.clone();
+        match Request::from11(stream).await {
+            Ok(req) => {
+                let mut ctx = Context::new(req);
+                handler.handler(&mut ctx).await;
             }
-            _ = tokio::time::sleep(Duration::from_secs(cfg.http11.conn_idle_timeout)) => {
-                return;
+            Err(_) => {
+                let stream = rawstream.clone();
+                let mut stream = stream.lock().await;
+                stream.write("Hello World!".as_bytes()).await;
             }
         }
     }
