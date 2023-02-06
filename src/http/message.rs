@@ -205,13 +205,6 @@ pub struct Range {
     pub length: u64,
 }
 
-pub(crate) struct OutputOpts {
-    pub(crate) compress_type: Option<CompressType>,
-    pub(crate) readobj: Option<Box<dyn AsyncRead + Send + Sync>>,
-    pub(crate) ranges: Option<Vec<Range>>,
-    pub(crate) content_type: String,
-}
-
 pub struct Message {
     pub(crate) f0: String,
     pub(crate) f1: String,
@@ -219,7 +212,10 @@ pub struct Message {
     pub(crate) headers: Headers,
     pub(crate) bodybuf: Option<BodyBuf>,
 
-    pub(crate) output_opts: Option<OutputOpts>,
+    pub(crate) output_compress_type: Option<CompressType>,
+    pub(crate) output_readobj: Option<Box<dyn AsyncRead + Send + Sync>>,
+    pub(crate) output_ranges: Option<Vec<Range>>,
+    pub(crate) output_content_type: String,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -240,7 +236,10 @@ impl Message {
             f2: "".to_string(),
             headers: Headers::new(),
             bodybuf: None,
-            output_opts: None,
+            output_compress_type: None,
+            output_content_type: "".to_string(),
+            output_readobj: None,
+            output_ranges: None,
         }
     }
 
@@ -549,7 +548,7 @@ impl Message {
         .await)?;
 
         let body_buf_size = self.body_buf_size();
-        if self.output_opts.is_none() || self.output_opts.as_ref().unwrap().readobj.is_none() {
+        if self.output_readobj.is_none() {
             self.headers.set_content_length(body_buf_size);
         }
 
@@ -563,7 +562,7 @@ impl Message {
         (writer.write_u8(b'\r').await)?;
         (writer.write_u8(b'\n').await)?;
 
-        match &mut self.output_opts {
+        match &mut self.output_readobj {
             Some(readobj) => {
                 todo!("direct chunked output")
             }
