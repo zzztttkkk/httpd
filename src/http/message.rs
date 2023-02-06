@@ -550,6 +550,7 @@ impl Message {
         let body_buf_size = self.body_buf_size();
         if self.output_readobj.is_none() {
             self.headers.set_content_length(body_buf_size);
+        } else if self.output_ranges.is_none() {
         }
 
         if let Some(map) = self.headers.map() {
@@ -559,13 +560,13 @@ impl Message {
                 }
             }
         }
-        (writer.write_u8(b'\r').await)?;
-        (writer.write_u8(b'\n').await)?;
+        (writer.write("\r\n".as_bytes()).await)?;
 
         match &mut self.output_readobj {
-            Some(readobj) => {
-                todo!("direct chunked output")
-            }
+            Some(readobj) => match self.output_ranges.as_ref() {
+                Some(ranges) => {}
+                None => {}
+            },
             None => {
                 if body_buf_size > 0 {
                     let buf = self.bodybuf.as_ref().unwrap().raw().unwrap();

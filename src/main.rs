@@ -50,9 +50,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let alive_counter: Arc<AtomicI64> = Arc::new(AtomicI64::new(0));
 
     let handler: Box<dyn http::Handler> = FsHandler::new(".", "/static/");
-
-    let handler_ptr: usize = unsafe { std::mem::transmute(&handler) };
-    let cfg_ptr: usize = unsafe { std::mem::transmute(&config) };
+    let handler: usize = unsafe { std::mem::transmute(&handler) };
+    let config: usize = unsafe { std::mem::transmute(&config) };
 
     loop {
         tokio::select! {
@@ -67,11 +66,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         tokio::spawn(async move {
                             if let Some(tls_acceptor) = tls_acceptor {
                                 if let Ok(stream) = tls_acceptor.accept(stream).await{
-                                    http::conn(stream, counter, unsafe{ std::mem::transmute(cfg_ptr) }, unsafe{ std::mem::transmute(handler_ptr) }).await;
+                                    http::conn(stream, counter, unsafe{ std::mem::transmute(config) }, unsafe{ std::mem::transmute(handler) }).await;
                                 }
                                 return;
                             }
-                            http::conn(stream, counter, unsafe{ std::mem::transmute(cfg_ptr) }, unsafe{ std::mem::transmute(handler_ptr) }).await;
+                            http::conn(stream, counter, unsafe{ std::mem::transmute(config) }, unsafe{ std::mem::transmute(handler) }).await;
                         });
                     }
                 }

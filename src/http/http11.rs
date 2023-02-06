@@ -39,16 +39,11 @@ pub async fn http11<T: RwStream + 'static>(
             from_result = request::from11(stream.as_mut(), &mut rbuf, cfg) => {
                 match from_result {
                     Ok(mut req) => {
-                        let mut resp = Response::default(&mut req, cfg.message.disbale_compression);
-
-                        let mut ctx = Context::new(
-                            unsafe{std::mem::transmute(req.as_mut())},
-                            unsafe{std::mem::transmute(resp.as_mut())}
-                        );
+                        let mut ctx = Context::new(req, Response::default(&mut req, cfg.message.disbale_compression));
 
                         handler.handle(&mut ctx).await;
 
-                        let _ = resp.to11(stream.as_mut()).await;
+                        let _ = ctx._resp.to11(stream.as_mut()).await;
                         if (stream.flush().await).is_err() {
                             return ;
                         }

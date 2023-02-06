@@ -7,7 +7,6 @@ mod headers;
 mod message;
 #[macro_use]
 pub mod middleware;
-mod conn;
 mod fs;
 mod http11;
 mod http2;
@@ -18,6 +17,6 @@ mod rwstream;
 mod websocket;
 mod ws;
 
-pub use conn::conn;
 pub use fs::FsHandler;
 pub use handler::Handler;
+pub use http11::http11 as conn;

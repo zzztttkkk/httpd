@@ -65,9 +65,9 @@ impl_for_raw_ptr!(ResponseRawPtr, Response);
 
 #[derive(Debug)]
 pub struct Context {
-    _data: HashMap<String, Box<dyn Any>>,
-    _req: usize,
-    _resp: usize,
+    pub(crate) _data: HashMap<String, Box<dyn Any>>,
+    pub(crate) _req: Box<Request>,
+    pub(crate) _resp: Box<Response>,
 
     pub(crate) _sync: RwLock<()>,
     pub(crate) _pre_stop: bool,
@@ -85,7 +85,7 @@ pub enum MiddlewareCtrl {
 }
 
 impl Context {
-    pub fn new(req: usize, resp: usize) -> Self {
+    pub fn new(req: Box<Request>, resp: Box<Response>) -> Self {
         Self {
             _data: HashMap::new(),
             _req: req,
@@ -98,6 +98,10 @@ impl Context {
         }
     }
 
+    pub fn sync(&self) -> RwLockWrapper {
+        RwLockWrapper(unsafe { std::mem::transmute(&self._sync) })
+    }
+
     pub fn get<T: Any>(&mut self, k: &str) -> Option<&mut T> {
         match self._data.get_mut(k) {
             Some(v) => v.downcast_mut(),
@@ -105,20 +109,16 @@ impl Context {
         }
     }
 
-    pub fn sync(&self) -> RwLockWrapper {
-        RwLockWrapper(unsafe { std::mem::transmute(&self._sync) })
-    }
-
     pub fn set(&mut self, k: &str, v: Box<dyn Any>) {
         self._data.insert(k.to_string(), v);
     }
 
-    pub fn request(&self) -> RequestRawPtr {
-        RequestRawPtr(unsafe { std::mem::transmute(self._req) })
+    pub fn request(&mut self) -> &mut Box<Request> {
+        &mut self._req
     }
 
-    pub fn response(&self) -> ResponseRawPtr {
-        ResponseRawPtr(unsafe { std::mem::transmute(self._resp) })
+    pub fn response(&mut self) -> &mut Box<Response> {
+        &mut self._resp
     }
 
     pub async fn stop(&mut self, ctrl: MiddlewareCtrl) {

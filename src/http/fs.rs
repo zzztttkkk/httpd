@@ -27,7 +27,7 @@ pub struct FsHandler {
     prefix: String,
     disable_index: bool,
     index_render: Option<FsIndexRenderFuncType>,
-    small_file_size: u64,
+    max_read_cap: u64,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -66,7 +66,7 @@ impl FsHandler {
             prefix,
             disable_index: false,
             index_render: None,
-            small_file_size: 200 * 1024,
+            max_read_cap: 200 * 1024,
         })
     }
 
@@ -122,7 +122,7 @@ impl FsHandler {
                                                 "<li><a href=\"./{}/{}\">{}</a></li>",
                                                 current_dir_name, filename, filename,
                                             )
-                                                .as_bytes(),
+                                            .as_bytes(),
                                         );
                                         continue;
                                     }
@@ -141,8 +141,8 @@ impl FsHandler {
                 ctx.response().statuscode(404);
             }
             Ok(mut f) => {
-                if metadata.len() <= self.small_file_size {
-                    let mut buf = Vec::<u8>::with_capacity(200 * 1024);
+                if metadata.len() <= self.max_read_cap {
+                    let mut buf = Vec::<u8>::with_capacity(self.max_read_cap as usize);
                     buf.resize(buf.capacity(), 0);
                     let ptr = unsafe { buf.as_mut_slice() };
                     match f.read(ptr).await {
@@ -455,7 +455,7 @@ impl FsHandler {
         }
 
         if found_dot {
-            let last_ext = (&fp[idx..]).to_lowercase();
+            let last_ext = (&fp[idx + 1..]).to_lowercase();
             match utils::COMMON_MIME_TYPES.get(&last_ext) {
                 Some(mime) => {
                     return mime;
@@ -577,9 +577,8 @@ impl FsHandler {
         }
 
         let mut req = ctx.request();
-        let mut reqc = req;
         let mut resp = ctx.response();
-        let (done, range_header) = Self::check_preconditions(ctx, reqc.headers(), modified_time);
+        let (done, range_header) = Self::check_preconditions(ctx, req.headers(), modified_time);
         if done {
             return;
         }
@@ -611,9 +610,18 @@ impl FsHandler {
             Ok(ranges) => {
                 if let Some(ranges) = ranges {
                     if !ranges.is_empty() {
-                        ctx.response().msg.output_ranges = Some(ranges);
-                        ctx.response().msg.output_content_type = ctype.to_string();
-                        return;
+                        match tokio::fs::File::open(fp).await {
+                            Err(_) => {
+                                ctx.response().statuscode(404);
+                                return;
+                            }
+                            Ok(f) => {
+                                ctx.response().msg.output_readobj = Some(Box::new(f));
+                                ctx.response().msg.output_ranges = Some(ranges);
+                                ctx.response().msg.output_content_type = ctype.to_string();
+                                return;
+                            }
+                        }
                     }
                 }
             }
@@ -627,7 +635,7 @@ impl FsHandler {
 #[async_trait]
 impl Handler for FsHandler {
     async fn handle(&self, ctx: &mut Context) {
-        let mut req = ctx.request();
+        let req = ctx.request();
         let rpath = req.uri().path();
         if !rpath.starts_with(self.prefix.as_str()) {
             ctx.response().statuscode(404);
