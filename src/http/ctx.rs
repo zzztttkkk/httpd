@@ -1,9 +1,17 @@
 use crate::http::request::Request;
 use crate::http::response::Response;
 
+pub enum Protocol {
+    Nil,
+    Websocket,
+    Http2,
+}
+
 pub struct Context {
-    req: Box<Request>,
-    resp: Response,
+    pub(crate) req: Box<Request>,
+    pub(crate) resp: Response,
+
+    pub(crate) upgrade_protocol: Protocol,
 }
 
 impl Context {
@@ -11,17 +19,11 @@ impl Context {
         Self {
             req,
             resp: Response {},
+            upgrade_protocol: Protocol::Nil,
         }
     }
 
-    pub fn default() -> Self {
-        Self {
-            req: Box::new(Request {}),
-            resp: Response {},
-        }
-    }
-
-    pub fn x(&mut self) {
-        println!("XXXX");
+    pub fn upgrade(&mut self, protocol: Protocol) {
+        self.upgrade_protocol = protocol;
     }
 }

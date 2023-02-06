@@ -1,5 +1,6 @@
 #![allow(unused)]
 
+use std::hash::Hash;
 use std::io::Write;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
@@ -9,6 +10,7 @@ use clap::Parser;
 use tokio::net::TcpListener;
 
 use crate::config::{Args, Config};
+use crate::http::Handler;
 
 mod config;
 mod http;
@@ -47,9 +49,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let alive_counter: Arc<AtomicI64> = Arc::new(AtomicI64::new(0));
-
-    let handler: usize = unsafe { std::mem::transmute((121 as usize)) };
-    let config: usize = unsafe { std::mem::transmute(&config) };
+    let handler: Arc<dyn Handler> = Arc::new(func!(ctx, {}));
+    let config: &'static Config = unsafe { std::mem::transmute(&config) };
 
     loop {
         tokio::select! {
@@ -60,15 +61,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     Ok((stream, _)) => {
                         let tls_acceptor = tls_acceptor.clone();
-                        let counter = alive_counter.clone();
+                        let handler = handler.clone();
+                        let ac = alive_counter.clone();
                         tokio::spawn(async move {
                             if let Some(tls_acceptor) = tls_acceptor {
                                 if let Ok(stream) = tls_acceptor.accept(stream).await{
-                                    // http::conn(stream, counter, unsafe{ std::mem::transmute(config) }, unsafe{ std::mem::transmute(handler) }).await;
+                                    http::conn(stream, ac, config, handler).await;
                                 }
                                 return;
                             }
-                            // http::conn(stream, counter, unsafe{ std::mem::transmute(config) }, unsafe{ std::mem::transmute(handler) }).await;
+                            http::conn(stream, ac, config, handler).await;
                         });
                     }
                 }
