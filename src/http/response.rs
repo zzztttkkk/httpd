@@ -10,6 +10,12 @@ pub struct Response {
 }
 
 impl Response {
+    pub fn new() -> Self {
+        Self {
+            msg: Message::new(),
+        }
+    }
+
     pub(crate) async fn to11<Writer: AsyncWriteExt + Unpin>(
         &mut self,
         writer: Arc<Mutex<Writer>>,

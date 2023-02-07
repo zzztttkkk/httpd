@@ -13,4 +13,5 @@ mod headers;
 mod compress;
 mod ws;
 mod ws_handler;
+mod http2;
 
