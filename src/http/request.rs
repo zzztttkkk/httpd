@@ -1,16 +1,32 @@
-use std::sync::Arc;
-use std::time::Duration;
-
 use tokio::io::{AsyncBufReadExt, AsyncReadExt};
-use tokio::sync::Mutex;
 
-pub struct Request {}
+use crate::config::Config;
+
+use super::message::Message;
+
+pub struct Request {
+    msg: Box<Message>,
+}
 
 impl Request {
-    pub async fn from11<R: AsyncBufReadExt + Unpin>(reader: Arc<Mutex<R>>) -> Result<Box<Request>, i32> {
-        let mut reader = reader.lock().await;
-        let v = reader.read_u8().await;
+    pub async fn from11<'a, R: AsyncBufReadExt + Unpin>(
+        reader: &'a mut R,
+        buf: &'a mut String,
+        cfg: &'static Config,
+    ) -> Result<Request, i32> {
+        return match Message::from11(reader, buf, cfg).await {
+            Ok(msg) => {
+                let mut req = Request { msg };
+                match req.init(cfg) {
+                    Ok(_) => Ok(req),
+                    Err(ev) => Err(ev),
+                }
+            }
+            Err(ev) => Err(ev),
+        };
+    }
 
+    fn init(&mut self, cfg: &'static Config) -> Result<(), i32> {
         Err(12)
     }
 }

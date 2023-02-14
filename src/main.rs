@@ -1,9 +1,7 @@
 #![allow(unused)]
 
-use std::hash::Hash;
-use std::io::Write;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use clap::Parser;
@@ -48,8 +46,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::process::id()
     );
 
-    let alive_counter: Arc<AtomicI64> = Arc::new(AtomicI64::new(0));
-    let handler: Arc<dyn Handler> = Arc::new(func!(ctx, {}));
+    let ac = AtomicI64::new(0);
+    let ac: &'static AtomicI64 = unsafe { std::mem::transmute(&ac) };
+    let handler: Box<dyn Handler> = Box::new(func!(ctx, {
+        println!("XXX");
+    }));
+    let handler: &'static Box<dyn Handler> = unsafe { std::mem::transmute(&handler) };
     let config: &'static Config = unsafe { std::mem::transmute(&config) };
 
     loop {
@@ -61,8 +63,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     Ok((stream, _)) => {
                         let tls_acceptor = tls_acceptor.clone();
-                        let handler = handler.clone();
-                        let ac = alive_counter.clone();
                         tokio::spawn(async move {
                             if let Some(tls_acceptor) = tls_acceptor {
                                 if let Ok(stream) = tls_acceptor.accept(stream).await{
@@ -78,7 +78,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             _ = tokio::signal::ctrl_c() => {
                 println!("[{}] httpd is preparing to shutdown", utils::Time::currentstr());
                 loop {
-                    if alive_counter.load(Ordering::Relaxed) < 1 {
+                    if ac.load(Ordering::Relaxed) < 1 {
                         break;
                     }
                     tokio::time::sleep(Duration::from_millis(10)).await;

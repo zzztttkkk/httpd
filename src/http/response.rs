@@ -18,7 +18,7 @@ impl Response {
 
     pub(crate) async fn to11<Writer: AsyncWriteExt + Unpin>(
         &mut self,
-        writer: Arc<Mutex<Writer>>,
+        writer: &mut Writer,
     ) -> std::io::Result<()> {
         self.msg.to11(writer).await
     }

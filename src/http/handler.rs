@@ -1,12 +1,9 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use async_trait::async_trait;
-
 use crate::http::ctx::Context;
 
-type FutureType<'a> = Pin<Box<dyn Future<Output=()> + Sync + Send + 'a>>;
-
+type FutureType<'a> = Pin<Box<dyn Future<Output = ()> + Sync + Send + 'a>>;
 
 pub trait Handler: Sync + Send {
     fn handler<'a: 'b, 'b>(&self, ctx: &'a mut Context) -> FutureType<'b>;
@@ -28,14 +25,14 @@ impl FuncHandler {
 
 #[macro_export]
 macro_rules! func {
-	($ctx:ident, $content:expr) => {
-        $crate::http::handler::FuncHandler::new(
-            Box::new(move |$ctx| { Box::pin(async move {$content}) })
-        )
-	};
+    ($ctx:ident, $content:expr) => {
+        $crate::http::handler::FuncHandler::new(Box::new(move |$ctx| {
+            Box::pin(async move { $content })
+        }))
+    };
     ($content:expr) => {
-        $crate::http::handler::FuncHandler::new(
-            Box::new(move |_| { Box::pin(async move {$content}) })
-        )
-	};
+        $crate::http::handler::FuncHandler::new(Box::new(move |_| {
+            Box::pin(async move { $content })
+        }))
+    };
 }

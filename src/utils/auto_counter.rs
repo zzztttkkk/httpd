@@ -1,10 +1,10 @@
-use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::Arc;
 
-pub struct AutoCounter(Arc<AtomicI64>);
+pub struct AutoCounter(&'static AtomicI64);
 
 impl AutoCounter {
-    pub fn new(v: Arc<AtomicI64>) -> Self {
+    pub fn new(v: &'static AtomicI64) -> Self {
         v.fetch_add(1, Ordering::AcqRel);
         Self(v)
     }

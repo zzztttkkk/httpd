@@ -1,22 +1,24 @@
+use std::sync::Arc;
+
 use crate::http::request::Request;
 use crate::http::response::Response;
 use crate::http::ws_handler::WebSocketHandler;
 
 pub enum Protocol {
     Nil,
-    Websocket(Box<dyn WebSocketHandler>),
+    Websocket(Arc<dyn WebSocketHandler>),
     Http2,
 }
 
 pub struct Context {
-    pub(crate) req: Box<Request>,
+    pub(crate) req: Request,
     pub(crate) resp: Response,
 
     pub(crate) upgrade_protocol: Protocol,
 }
 
 impl Context {
-    pub fn new(req: Box<Request>) -> Self {
+    pub fn new(req: Request) -> Self {
         Self {
             req,
             resp: Response::new(),

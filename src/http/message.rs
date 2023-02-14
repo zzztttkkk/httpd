@@ -178,7 +178,7 @@ impl std::fmt::Debug for BodyBuf {
                     v.get_rpos(),
                     v.get_wpos()
                 )
-                    .unwrap();
+                .unwrap();
             }
         }
 
@@ -254,13 +254,11 @@ impl Message {
         }
     }
 
-    pub(crate) async fn from11<R: AsyncBufReadExt + Unpin>(
-        reader: Arc<Mutex<R>>,
-        buf: &mut String,
+    pub(crate) async fn from11<'a, R: AsyncBufReadExt + Unpin>(
+        reader: &'a mut R,
+        buf: &'a mut String,
         cfg: &'static Config,
     ) -> Result<Box<Self>, i32> {
-        let mut reader = reader.lock().await;
-
         let mut status = ReadStatus::None;
         let mut msg = Box::new(Message::new());
 
@@ -539,29 +537,28 @@ impl Message {
 
     pub(crate) async fn to11<Writer: AsyncWriteExt + Unpin>(
         &mut self,
-        writer: Arc<Mutex<Writer>>,
+        writer: &mut Writer,
     ) -> std::io::Result<()> {
-        let mut writer = writer.lock().await;
-
         (Writer::write(
-            &mut writer,
+            writer,
             format!("HTTP/1.1 {} {}\r\n", self.f1, self.f2).as_bytes(),
         )
-            .await)?;
+        .await)?;
 
         let body_buf_size = self.body_buf_size();
         if self.output_readobj.is_none() {
             self.headers.set_content_length(body_buf_size);
-        } else if self.output_ranges.is_none() {}
+        } else if self.output_ranges.is_none() {
+        }
 
         if let Some(map) = self.headers.map() {
             for (key, vals) in map {
                 for val in vals {
-                    (Writer::write(&mut writer, format!("{}: {}\r\n", key, val).as_bytes()).await)?;
+                    (Writer::write(writer, format!("{}: {}\r\n", key, val).as_bytes()).await)?;
                 }
             }
         }
-        (Writer::write(&mut writer, "\r\n".as_bytes()).await)?;
+        (Writer::write(writer, "\r\n".as_bytes()).await)?;
 
         match &mut self.output_readobj {
             Some(readobj) => match self.output_ranges.as_ref() {
@@ -575,7 +572,7 @@ impl Message {
             None => {
                 if body_buf_size > 0 {
                     let buf = self.bodybuf.as_ref().unwrap().raw().unwrap();
-                    (Writer::write(&mut writer, buf.as_bytes()).await)?;
+                    (Writer::write(writer, buf.as_bytes()).await)?;
                 }
             }
         }

@@ -115,7 +115,7 @@ pub struct Args {
     /// httpd listing address
     pub addr: String,
 
-    #[arg(long)]
+    #[arg(long, short)]
     /// config toml file path
     pub file: Option<String>,
 }
