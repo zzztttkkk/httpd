@@ -29,4 +29,12 @@ impl Context {
     pub fn upgrade(&mut self, protocol: Protocol) {
         self.upgrade_protocol = protocol;
     }
+
+    pub fn request(&mut self) -> &mut Request {
+        &mut self.req
+    }
+
+    pub fn response(&mut self) -> &mut Response {
+        &mut self.resp
+    }
 }

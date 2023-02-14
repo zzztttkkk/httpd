@@ -7,7 +7,6 @@ edition = "2021"
 
 [dependencies]
 tokio = { version = " 1.24.1", features = ["full"] }
-async-trait = "0.1.63"
 bytebuffer = "2.1.0"
 chrono = "0.4.23"
 flate2 = "1.0.25"

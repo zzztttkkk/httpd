@@ -3,7 +3,7 @@ use std::pin::Pin;
 
 use crate::http::ctx::Context;
 
-type FutureType<'a> = Pin<Box<dyn Future<Output = ()> + Sync + Send + 'a>>;
+pub type FutureType<'a> = Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
 
 pub trait Handler: Sync + Send {
     fn handler<'a: 'b, 'b>(&self, ctx: &'a mut Context) -> FutureType<'b>;

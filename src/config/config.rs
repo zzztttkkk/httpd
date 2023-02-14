@@ -28,13 +28,11 @@ pub struct ConfigSocket {
 
 impl ConfigSocket {
     fn autofix(&mut self) {
-        if self.read_buf_cap > 0 || self.write_buf_cap > 0 {
-            if self.read_buf_cap < 1 {
-                self.read_buf_cap = 8 * 1024; // 8KB
-            }
-            if self.write_buf_cap < 1 {
-                self.write_buf_cap = 8 * 1024; // 8KB
-            }
+        if self.read_buf_cap < 1 {
+            self.read_buf_cap = 8 * 1024; // 8KB
+        }
+        if self.write_buf_cap < 1 {
+            self.write_buf_cap = 8 * 1024; // 8KB
         }
     }
 }

@@ -13,7 +13,7 @@ impl Request {
         reader: &'a mut R,
         buf: &'a mut String,
         cfg: &'static Config,
-    ) -> Result<Request, i32> {
+    ) -> Result<Request, u32> {
         return match Message::from11(reader, buf, cfg).await {
             Ok(msg) => {
                 let mut req = Request { msg };
@@ -26,7 +26,7 @@ impl Request {
         };
     }
 
-    fn init(&mut self, cfg: &'static Config) -> Result<(), i32> {
-        Err(12)
+    fn init(&mut self, cfg: &'static Config) -> Result<(), u32> {
+        Ok(())
     }
 }

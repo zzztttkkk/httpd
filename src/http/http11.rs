@@ -1,7 +1,7 @@
 use std::sync::atomic::AtomicI64;
 use std::sync::Arc;
 
-use tokio::io::{AsyncWriteExt, BufStream};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufStream};
 
 use crate::config::Config;
 use crate::http::ctx::{Context, Protocol};
@@ -10,6 +10,8 @@ use crate::http::request::Request;
 use crate::http::rwtypes::AsyncStream;
 use crate::http::{http2, ws};
 use crate::utils;
+
+use super::message::ERROR_MAYBE_HTTP2;
 
 pub async fn conn<T: AsyncStream + 'static>(
     stream: T,
@@ -21,14 +23,15 @@ pub async fn conn<T: AsyncStream + 'static>(
 
     let mut stream =
         BufStream::with_capacity(cfg.socket.read_buf_cap, cfg.socket.write_buf_cap, stream);
-    let mut buf = String::with_capacity(cfg.message.read_buf_cap);
+    let mut rbuf = String::with_capacity(12);
 
     loop {
-        match Request::from11(&mut stream, &mut buf, cfg).await {
+        match Request::from11(&mut stream, &mut rbuf, cfg).await {
             Ok(req) => {
                 let mut ctx = Context::new(req);
                 handler.handler(&mut ctx).await;
                 ctx.resp.to11(&mut stream).await;
+                stream.flush().await;
 
                 match ctx.upgrade_protocol {
                     Protocol::Websocket(wsh) => {
@@ -42,8 +45,45 @@ pub async fn conn<T: AsyncStream + 'static>(
                     Protocol::Nil => {}
                 }
             }
-            Err(_) => {
-                stream.write("Hello World!".as_bytes()).await;
+            Err(ev) => {
+                if ev == ERROR_MAYBE_HTTP2 {
+                    rbuf.clear();
+                    match stream.read_line(&mut rbuf).await {
+                        Ok(line_size) => {
+                            if line_size != 2 {
+                                return;
+                            }
+                        }
+                        Err(_) => {
+                            return;
+                        }
+                    }
+                    rbuf.clear();
+                    match stream.read_line(&mut rbuf).await {
+                        Ok(line_size) => {
+                            if line_size != 4 || &rbuf[0..2] != "SM" {
+                                return;
+                            }
+                        }
+                        Err(_) => {
+                            return;
+                        }
+                    }
+                    rbuf.clear();
+                    match stream.read_line(&mut rbuf).await {
+                        Ok(line_size) => {
+                            if line_size != 2 {
+                                return;
+                            }
+                        }
+                        Err(_) => {
+                            return;
+                        }
+                    }
+                    tokio::spawn(http2::conn(stream, ac, cfg, handler));
+                    return;
+                }
+                break;
             }
         }
     }

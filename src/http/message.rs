@@ -214,7 +214,7 @@ pub struct Message {
     pub(crate) bodybuf: Option<BodyBuf>,
 
     pub(crate) output_compress_type: Option<CompressType>,
-    pub(crate) output_readobj: Option<Box<dyn AsyncRead + Send + Sync>>,
+    pub(crate) output_readobj: Option<Box<dyn AsyncRead + Send>>,
     pub(crate) output_ranges: Option<Vec<Range>>,
     pub(crate) output_content_type: String,
 }
@@ -227,7 +227,10 @@ enum ReadStatus {
     Ok,
 }
 
-pub static READ_MSG_ERROR_MAYBE_HTTP2: i32 = 12;
+pub static ERROR_STREAM: u32 = 0;
+pub static ERROE_FIRST_LINE_TOO_LARGE: u32 = 1;
+pub static ERR_NON_ASCII_IN_HEADERS: u32 = 2;
+pub static ERROR_MAYBE_HTTP2: u32 = 99;
 
 impl Message {
     pub(crate) fn new() -> Self {
@@ -254,11 +257,25 @@ impl Message {
         }
     }
 
+    // todo safe read_line
     pub(crate) async fn from11<'a, R: AsyncBufReadExt + Unpin>(
         reader: &'a mut R,
         buf: &'a mut String,
         cfg: &'static Config,
-    ) -> Result<Box<Self>, i32> {
+    ) -> Result<Box<Self>, u32> {
+        buf.clear();
+        match reader.read_line(buf).await {
+            Ok(line_size) => {
+                if (line_size <= 2) {
+                    return Err(ERROR_STREAM);
+                }
+                if line_size > cfg.message.max_first_line_size {
+                    return Err(ERROE_FIRST_LINE_TOO_LARGE);
+                }
+            }
+            Err(_) => return Err(ERROR_STREAM),
+        }
+
         let mut status = ReadStatus::None;
         let mut msg = Box::new(Message::new());
 
@@ -269,71 +286,50 @@ impl Message {
         loop {
             match status {
                 ReadStatus::None => {
-                    buf.clear();
-                    match reader.read_line(buf).await {
-                        Ok(line_size) => {
-                            if line_size < 2 {
-                                return Err(0);
-                            }
+                    if buf.starts_with("PRI * HTTP/2.0") {
+                        return Err(ERROR_MAYBE_HTTP2);
+                    }
 
-                            if line_size == 2 {
-                                continue;
-                            }
-
-                            if line_size > cfg.message.max_first_line_size {
-                                return Err(0);
-                            }
-
-                            if buf.starts_with("PRI * HTTP/2.0") {
-                                return Err(READ_MSG_ERROR_MAYBE_HTTP2);
-                            }
-
-                            let mut fls = 0;
-                            for rune in buf.chars() {
-                                if rune > 127 as char {
-                                    return Err(0);
-                                }
-
-                                match fls {
-                                    0 => {
-                                        if rune == ' ' {
-                                            fls += 1;
-                                            continue;
-                                        }
-                                        msg.f0.push(rune);
-                                    }
-                                    1 => {
-                                        if rune == ' ' {
-                                            fls += 1;
-                                            continue;
-                                        }
-                                        msg.f1.push(rune);
-                                    }
-                                    2 => {
-                                        if rune == '\r' {
-                                            break;
-                                        }
-                                        msg.f2.push(rune);
-                                    }
-                                    _ => {
-                                        break;
-                                    }
-                                }
-                            }
-                            status = ReadStatus::Headers;
+                    let mut fls = 0;
+                    for rune in buf.chars() {
+                        if rune > 127 as char {
+                            return Err(ERR_NON_ASCII_IN_HEADERS);
                         }
-                        Err(e) => {
-                            println!("{}", e);
-                            return Err(0);
+
+                        match fls {
+                            0 => {
+                                if rune == ' ' {
+                                    fls += 1;
+                                    continue;
+                                }
+                                msg.f0.push(rune);
+                            }
+                            1 => {
+                                if rune == ' ' {
+                                    fls += 1;
+                                    continue;
+                                }
+                                msg.f1.push(rune);
+                            }
+                            2 => {
+                                if rune == '\r' {
+                                    break;
+                                }
+                                msg.f2.push(rune);
+                            }
+                            _ => {
+                                break;
+                            }
                         }
                     }
+                    status = ReadStatus::Headers;
                 }
                 ReadStatus::Headers => {
                     buf.clear();
                     match reader.read_line(buf).await {
                         Ok(line_size) => {
                             if line_size < 2 {
-                                return Err(0);
+                                return Err(5);
                             }
 
                             if line_size == 2 {
@@ -370,28 +366,28 @@ impl Message {
                             }
 
                             if line_size > cfg.message.max_header_line_size {
-                                return Err(0);
+                                return Err(6);
                             }
 
                             if header_count > cfg.message.max_header_count {
-                                return Err(0);
+                                return Err(7);
                             }
 
                             if !buf.is_ascii() {
-                                return Err(0);
+                                return Err(8);
                             }
 
                             let mut parts = buf.splitn(2, ':');
                             let key = match parts.next() {
                                 None => {
-                                    return Err(0);
+                                    return Err(9);
                                 }
                                 Some(v) => v,
                             };
 
                             match parts.next() {
                                 None => {
-                                    return Err(0);
+                                    return Err(10);
                                 }
                                 Some(v) => {
                                     msg.headers.append(key, v.trim());
@@ -399,9 +395,8 @@ impl Message {
                                 }
                             }
                         }
-                        Err(e) => {
-                            println!("{}", e);
-                            return Err(0);
+                        Err(e_) => {
+                            return Err(11);
                         }
                     }
                 }
@@ -413,7 +408,7 @@ impl Message {
                             match reader.read_line(buf).await {
                                 Ok(line_size) => {
                                     if line_size < 2 {
-                                        return Err(0);
+                                        return Err(12);
                                     }
 
                                     if line_size == 2 {
@@ -425,8 +420,7 @@ impl Message {
                                         match buf.as_str()[0..line_size - 2].parse::<usize>() {
                                             Ok(v) => v,
                                             Err(e) => {
-                                                println!("ParseChunkSizeFailed: {:?}", e);
-                                                return Err(0);
+                                                return Err(13);
                                             }
                                         };
 
@@ -444,7 +438,7 @@ impl Message {
                                         match reader.read(bytes).await {
                                             Ok(rbs) => {
                                                 if rbs < 1 {
-                                                    return Err(0);
+                                                    return Err(14);
                                                 }
 
                                                 msg.bodybuf
@@ -458,8 +452,7 @@ impl Message {
                                                 remain_chunk_size -= rbs;
                                             }
                                             Err(e) => {
-                                                println!("{}", e);
-                                                return Err(0);
+                                                return Err(15);
                                             }
                                         }
                                     }
@@ -467,28 +460,28 @@ impl Message {
                                     match reader.read_u8().await {
                                         Ok(v) => {
                                             if v != b'\r' {
-                                                return Err(0);
+                                                return Err(16);
                                             }
                                         }
                                         Err(_) => {
-                                            return Err(0);
+                                            return Err(17);
                                         }
                                     }
 
                                     match reader.read_u8().await {
                                         Ok(v) => {
                                             if v != b'\n' {
-                                                return Err(0);
+                                                return Err(18);
                                             }
                                         }
                                         Err(_) => {
-                                            return Err(0);
+                                            return Err(19);
                                         }
                                     }
                                 }
                                 Err(e) => {
                                     println!("{:?}", e);
-                                    return Err(0);
+                                    return Err(20);
                                 }
                             }
                         }
@@ -501,14 +494,13 @@ impl Message {
                             match reader.read(bytes).await {
                                 Ok(s) => {
                                     if s < 1 {
-                                        return Err(0);
+                                        return Err(21);
                                     }
                                     msg.bodybuf.as_mut().unwrap().writeraw(&bytes[0..s]);
                                     body_remains -= s as i64;
                                 }
-                                Err(e) => {
-                                    println!("{}", e);
-                                    return Err(0);
+                                Err(_) => {
+                                    return Err(22);
                                 }
                             };
                         }
