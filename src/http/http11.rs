@@ -46,6 +46,8 @@ pub async fn conn<T: AsyncStream + 'static>(
                 }
             }
             Err(ev) => {
+				println!("Ev: {}", ev);
+
                 if ev == ERROR_MAYBE_HTTP2 {
                     rbuf.clear();
                     match stream.read_line(&mut rbuf).await {
