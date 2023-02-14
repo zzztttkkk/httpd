@@ -135,7 +135,7 @@ impl Response {
 
     pub fn default(req: &mut Request, disable_compression: bool) -> Box<Self> {
         let mut resp = Box::new(Self::new());
-        if (!disable_compression) {
+        if !disable_compression {
             resp.msg.output_compress_type = req.headers().out_going_compress_type();
         }
         resp

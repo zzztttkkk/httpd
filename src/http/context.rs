@@ -66,8 +66,8 @@ impl_for_raw_ptr!(ResponseRawPtr, Response);
 #[derive(Debug)]
 pub struct Context {
     pub(crate) _data: HashMap<String, Box<dyn Any>>,
-    pub(crate) _req: Box<Request>,
-    pub(crate) _resp: Box<Response>,
+    pub(crate) _req: RequestRawPtr,
+    pub(crate) _resp: ResponseRawPtr,
 
     pub(crate) _sync: RwLock<()>,
     pub(crate) _pre_stop: bool,
@@ -85,11 +85,11 @@ pub enum MiddlewareCtrl {
 }
 
 impl Context {
-    pub fn new(req: Box<Request>, resp: Box<Response>) -> Self {
+    pub fn new(req: &Box<Request>, resp: &Box<Response>) -> Self {
         Self {
             _data: HashMap::new(),
-            _req: req,
-            _resp: resp,
+            _req: unsafe { std::mem::transmute(req) },
+            _resp: unsafe { std::mem::transmute(resp) },
 
             _sync: RwLock::new(()),
             _pre_stop: false,
@@ -113,12 +113,12 @@ impl Context {
         self._data.insert(k.to_string(), v);
     }
 
-    pub fn request(&mut self) -> &mut Box<Request> {
-        &mut self._req
+    pub fn request(&mut self) -> RequestRawPtr {
+        self._req
     }
 
-    pub fn response(&mut self) -> &mut Box<Response> {
-        &mut self._resp
+    pub fn response(&mut self) -> ResponseRawPtr {
+        self._resp
     }
 
     pub async fn stop(&mut self, ctrl: MiddlewareCtrl) {

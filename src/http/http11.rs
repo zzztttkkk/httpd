@@ -1,11 +1,11 @@
 use std::{
     pin::Pin,
-    sync::{atomic::AtomicI64, Arc},
+    sync::{Arc, atomic::AtomicI64},
     time::Duration,
 };
-use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt};
 
 use tokio::{io::BufStream, net::TcpStream};
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt};
 
 use crate::{
     config::Config,
@@ -39,7 +39,8 @@ pub async fn http11<T: RwStream + 'static>(
             from_result = request::from11(stream.as_mut(), &mut rbuf, cfg) => {
                 match from_result {
                     Ok(mut req) => {
-                        let mut ctx = Context::new(req, Response::default(&mut req, cfg.message.disbale_compression));
+                        let resp = Response::default(&mut req, cfg.message.disbale_compression);
+                        let mut ctx = Context::new(&req, &resp);
 
                         handler.handle(&mut ctx).await;
 

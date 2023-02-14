@@ -20,7 +20,7 @@ use super::headers::Headers;
 use super::request::Request;
 
 pub type FsIndexRenderFuncType =
-    Box<dyn (Fn(&mut Context, &Vec<tokio::fs::DirEntry>) -> String) + Send + Sync>;
+Box<dyn (Fn(&mut Context, &Vec<tokio::fs::DirEntry>) -> String) + Send + Sync>;
 
 pub struct FsHandler {
     root: String,
@@ -122,7 +122,7 @@ impl FsHandler {
                                                 "<li><a href=\"./{}/{}\">{}</a></li>",
                                                 current_dir_name, filename, filename,
                                             )
-                                            .as_bytes(),
+                                                .as_bytes(),
                                         );
                                         continue;
                                     }
@@ -577,6 +577,7 @@ impl FsHandler {
         }
 
         let mut req = ctx.request();
+        let mut reqc = req;
         let mut resp = ctx.response();
         let (done, range_header) = Self::check_preconditions(ctx, req.headers(), modified_time);
         if done {
@@ -585,7 +586,7 @@ impl FsHandler {
 
         let mut code = 200;
         let mut ctype: &str = "";
-        match req.headers().get("content-type") {
+        match reqc.headers().get("content-type") {
             None => {
                 ctype = Self::mime(fp);
                 resp.headers().set_content_type(ctype);
@@ -635,7 +636,7 @@ impl FsHandler {
 #[async_trait]
 impl Handler for FsHandler {
     async fn handle(&self, ctx: &mut Context) {
-        let req = ctx.request();
+        let mut req = ctx.request();
         let rpath = req.uri().path();
         if !rpath.starts_with(self.prefix.as_str()) {
             ctx.response().statuscode(404);
