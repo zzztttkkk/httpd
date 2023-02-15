@@ -5,7 +5,7 @@ use crate::config::Config;
 use super::message::Message;
 
 pub struct Request {
-    msg: Box<Message>,
+    pub(crate) msg: Box<Message>,
 }
 
 impl Request {

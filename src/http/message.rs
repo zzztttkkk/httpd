@@ -59,6 +59,7 @@ impl BodyBuf {
         }
     }
 
+    #[inline]
     pub fn writeraw(&mut self, buf: &[u8]) {
         ByteBuffer::write(self.raw.as_mut().unwrap(), buf).unwrap();
     }
@@ -128,6 +129,7 @@ impl BodyBuf {
         }
     }
 
+    #[inline]
     pub fn raw(&self) -> Option<&ByteBuffer> {
         self.raw.as_ref()
     }
@@ -366,7 +368,7 @@ impl Message {
                                     }
                                 }
 
-                                if let Some(ct) = msg.headers.in_coming_compress_type() {
+                                if let Some(ct) = msg.headers.content_encoding() {
                                     msg.bodybuf.as_mut().unwrap().decompress(ct);
                                 }
 
@@ -600,7 +602,7 @@ impl Write for Message {
         body.write(buf)
     }
 
-    #[inline(always)]
+    #[inline]
     fn flush(&mut self) -> std::io::Result<()> {
         if self.bodybuf.is_none() {
             return Ok(());

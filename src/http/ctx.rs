@@ -18,10 +18,16 @@ pub struct Context {
 }
 
 impl Context {
-    pub fn new(req: Request) -> Self {
+    pub fn new(mut req: Request) -> Self {
+        let mut resp = Response::new();
+        if let Some(ct) = req.msg.headers.accept_encoding() {
+            resp.msg.headers.set_content_encoding(ct);
+            resp.msg.output_compress_type = Some(ct);
+        }
+
         Self {
             req,
-            resp: Response::new(),
+            resp,
             upgrade_protocol: Protocol::Nil,
         }
     }

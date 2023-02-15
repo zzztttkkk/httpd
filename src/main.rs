@@ -18,8 +18,8 @@ mod utils;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     let mut config;
-    if let Some(cf) = args.file {
-        let txt = std::fs::read_to_string(cf.as_str())?;
+    if !args.file.trim().is_empty() {
+        let txt = std::fs::read_to_string(args.file.trim())?;
         config = toml::from_str(txt.as_str())?;
     } else {
         config = Config::default();

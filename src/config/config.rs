@@ -109,11 +109,11 @@ impl Config {
 #[command(name = "httpd")]
 #[command(about = "A simple http server", long_about = None)]
 pub struct Args {
-    #[arg(default_value = "127.0.0.1:8080")]
+    #[arg(name = "config", default_value = "")]
+    /// config file path(toml)
+    pub file: String,
+
+    #[arg(long, default_value = "127.0.0.1:8080")]
     /// httpd listing address
     pub addr: String,
-
-    #[arg(long, short)]
-    /// config toml file path
-    pub file: Option<String>,
 }

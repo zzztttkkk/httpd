@@ -146,7 +146,7 @@ impl Headers {
         self.set("content-type", val)
     }
 
-    pub fn in_coming_compress_type(&mut self) -> Option<CompressType> {
+    pub fn content_encoding(&mut self) -> Option<CompressType> {
         match &mut self._in_compress_type {
             Some(v) => {
                 return *v;
@@ -159,7 +159,7 @@ impl Headers {
         }
     }
 
-    pub fn out_going_compress_type(&mut self) -> Option<CompressType> {
+    pub fn accept_encoding(&mut self) -> Option<CompressType> {
         match &mut self._out_compress_type {
             Some(v) => {
                 return *v;
