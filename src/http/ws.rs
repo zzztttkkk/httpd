@@ -1,12 +1,9 @@
 use std::sync::atomic::AtomicI64;
 use std::sync::Arc;
 
-use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, BufStream};
-use tokio::sync::Mutex;
+use tokio::io::{AsyncRead, AsyncWrite, BufStream};
 
 use crate::config::Config;
-use crate::http::rwtypes::AsyncStream;
-use crate::http::Handler;
 use crate::utils;
 
 use super::ws_handler::WebSocketHandler;

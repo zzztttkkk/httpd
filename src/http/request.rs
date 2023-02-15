@@ -1,4 +1,4 @@
-use tokio::io::{AsyncBufReadExt, AsyncReadExt};
+use tokio::io::AsyncBufReadExt;
 
 use crate::config::Config;
 

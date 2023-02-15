@@ -1,12 +1,10 @@
 use std::io::Write;
-use std::sync::Arc;
 
-use tokio::io::{AsyncWrite, AsyncWriteExt};
-use tokio::sync::Mutex;
+use tokio::io::AsyncWriteExt;
 
 use crate::http::message::Message;
 
-use super::status::STATUS_CODES;
+use super::status::{status_reason, STATUS_CODES};
 
 pub struct Response {
     pub(crate) msg: Message,
@@ -29,14 +27,7 @@ impl Response {
         }
 
         self.msg.f1 = self._status_code.to_string();
-        match STATUS_CODES.get(&self._status_code) {
-            None => {
-                self.msg.f2 = "Undefined".to_string();
-            }
-            Some(reason) => {
-                self.msg.f2 = reason.to_string();
-            }
-        };
+        self.msg.f2 = status_reason(self._status_code).to_string();
     }
 
     pub(crate) async fn to11<Writer: AsyncWriteExt + Unpin>(

@@ -75,3 +75,10 @@ pub static STATUS_CODES: Lazy<HashMap<u32, String>> = Lazy::new(|| {
 
     m
 });
+
+pub fn status_reason(code: u32) -> &'static str {
+    match STATUS_CODES.get(&code) {
+        Some(tref) => tref.as_str(),
+        None => "Undefined Code",
+    }
+}

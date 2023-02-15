@@ -1,11 +1,9 @@
 use std::fmt::Formatter;
 use std::io::{Read, Write};
-use std::sync::Arc;
 
 use bytebuffer::ByteBuffer;
 use flate2::Compression;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWriteExt};
-use tokio::sync::Mutex;
 
 use crate::config::Config;
 use crate::http::compress::{CompressType, CompressWriter, Deflate, Gzip};
@@ -227,10 +225,13 @@ enum ReadStatus {
     Ok,
 }
 
-pub static ERROR_STREAM: u32 = 0;
-pub static ERROE_FIRST_LINE_TOO_LARGE: u32 = 1;
+pub static ERR_BAD_STREAM: u32 = 0;
+pub static ERR_FIRST_LINE_TOO_LARGE: u32 = 414;
+pub static ERR_NON_ASCII_IN_FIRST_LINE: u32 = 400;
+pub static ERR_HEADER_LINE_TOOL_LARGE: u32 = 431;
+pub static ERR_HEADERS_COUNT_TOO_MANY: u32 = 431;
 pub static ERR_NON_ASCII_IN_HEADERS: u32 = 2;
-pub static ERROR_MAYBE_HTTP2: u32 = 99;
+pub static ERR_MAYBE_HTTP2: u32 = 99;
 
 impl Message {
     pub(crate) fn new() -> Self {
@@ -264,16 +265,20 @@ impl Message {
         cfg: &'static Config,
     ) -> Result<Box<Self>, u32> {
         buf.clear();
-        match reader.read_line(buf).await {
+        match reader
+            .take((cfg.message.max_first_line_size) as u64)
+            .read_line(buf)
+            .await
+        {
             Ok(line_size) => {
                 if (line_size <= 2) {
-                    return Err(ERROR_STREAM);
+                    return Err(ERR_BAD_STREAM);
                 }
-                if line_size > cfg.message.max_first_line_size {
-                    return Err(ERROE_FIRST_LINE_TOO_LARGE);
+                if line_size >= cfg.message.max_first_line_size {
+                    return Err(ERR_FIRST_LINE_TOO_LARGE);
                 }
             }
-            Err(_) => return Err(ERROR_STREAM),
+            Err(_) => return Err(ERR_BAD_STREAM),
         }
 
         let mut status = ReadStatus::None;
@@ -287,13 +292,13 @@ impl Message {
             match status {
                 ReadStatus::None => {
                     if buf.starts_with("PRI * HTTP/2.0") {
-                        return Err(ERROR_MAYBE_HTTP2);
+                        return Err(ERR_MAYBE_HTTP2);
                     }
 
                     let mut fls = 0;
                     for rune in buf.chars() {
                         if rune > 127 as char {
-                            return Err(ERR_NON_ASCII_IN_HEADERS);
+                            return Err(ERR_NON_ASCII_IN_FIRST_LINE);
                         }
 
                         match fls {
@@ -326,10 +331,14 @@ impl Message {
                 }
                 ReadStatus::Headers => {
                     buf.clear();
-                    match reader.read_line(buf).await {
+                    match reader
+                        .take((cfg.message.max_header_line_size) as u64)
+                        .read_line(buf)
+                        .await
+                    {
                         Ok(line_size) => {
                             if line_size < 2 {
-                                return Err(5);
+                                return Err(ERR_BAD_STREAM);
                             }
 
                             if line_size == 2 {
@@ -365,29 +374,29 @@ impl Message {
                                 continue;
                             }
 
-                            if line_size > cfg.message.max_header_line_size {
-                                return Err(6);
+                            if line_size >= cfg.message.max_header_line_size {
+                                return Err(ERR_HEADER_LINE_TOOL_LARGE);
                             }
 
                             if header_count > cfg.message.max_header_count {
-                                return Err(7);
+                                return Err(ERR_HEADERS_COUNT_TOO_MANY);
                             }
 
                             if !buf.is_ascii() {
-                                return Err(8);
+                                return Err(ERR_NON_ASCII_IN_HEADERS);
                             }
 
                             let mut parts = buf.splitn(2, ':');
                             let key = match parts.next() {
                                 None => {
-                                    return Err(9);
+                                    return Err(ERR_BAD_STREAM);
                                 }
                                 Some(v) => v,
                             };
 
                             match parts.next() {
                                 None => {
-                                    return Err(10);
+                                    return Err(ERR_BAD_STREAM);
                                 }
                                 Some(v) => {
                                     msg.headers.append(key, v.trim());
@@ -396,7 +405,7 @@ impl Message {
                             }
                         }
                         Err(e_) => {
-                            return Err(11);
+                            return Err(ERR_BAD_STREAM);
                         }
                     }
                 }
@@ -404,11 +413,10 @@ impl Message {
                     if is_chunked {
                         loop {
                             buf.clear();
-
-                            match reader.read_line(buf).await {
+                            match reader.take(36).read_line(buf).await {
                                 Ok(line_size) => {
-                                    if line_size < 2 {
-                                        return Err(12);
+                                    if line_size < 2 || line_size >= 36 {
+                                        return Err(ERR_BAD_STREAM);
                                     }
 
                                     if line_size == 2 {
@@ -420,7 +428,7 @@ impl Message {
                                         match buf.as_str()[0..line_size - 2].parse::<usize>() {
                                             Ok(v) => v,
                                             Err(e) => {
-                                                return Err(13);
+                                                return Err(ERR_BAD_STREAM);
                                             }
                                         };
 
@@ -438,7 +446,7 @@ impl Message {
                                         match reader.read(bytes).await {
                                             Ok(rbs) => {
                                                 if rbs < 1 {
-                                                    return Err(14);
+                                                    return Err(ERR_BAD_STREAM);
                                                 }
 
                                                 msg.bodybuf
@@ -452,7 +460,7 @@ impl Message {
                                                 remain_chunk_size -= rbs;
                                             }
                                             Err(e) => {
-                                                return Err(15);
+                                                return Err(ERR_BAD_STREAM);
                                             }
                                         }
                                     }
@@ -460,28 +468,27 @@ impl Message {
                                     match reader.read_u8().await {
                                         Ok(v) => {
                                             if v != b'\r' {
-                                                return Err(16);
+                                                return Err(ERR_BAD_STREAM);
                                             }
                                         }
                                         Err(_) => {
-                                            return Err(17);
+                                            return Err(ERR_BAD_STREAM);
                                         }
                                     }
 
                                     match reader.read_u8().await {
                                         Ok(v) => {
                                             if v != b'\n' {
-                                                return Err(18);
+                                                return Err(ERR_BAD_STREAM);
                                             }
                                         }
                                         Err(_) => {
-                                            return Err(19);
+                                            return Err(ERR_BAD_STREAM);
                                         }
                                     }
                                 }
-                                Err(e) => {
-                                    println!("{:?}", e);
-                                    return Err(20);
+                                Err(_) => {
+                                    return Err(ERR_BAD_STREAM);
                                 }
                             }
                         }
@@ -494,13 +501,13 @@ impl Message {
                             match reader.read(bytes).await {
                                 Ok(s) => {
                                     if s < 1 {
-                                        return Err(21);
+                                        return Err(ERR_BAD_STREAM);
                                     }
                                     msg.bodybuf.as_mut().unwrap().writeraw(&bytes[0..s]);
                                     body_remains -= s as i64;
                                 }
                                 Err(_) => {
-                                    return Err(22);
+                                    return Err(ERR_BAD_STREAM);
                                 }
                             };
                         }

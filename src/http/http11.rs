@@ -1,5 +1,4 @@
 use std::sync::atomic::AtomicI64;
-use std::sync::Arc;
 
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufStream};
 
@@ -11,7 +10,7 @@ use crate::http::rwtypes::AsyncStream;
 use crate::http::{http2, ws};
 use crate::utils;
 
-use super::message::ERROR_MAYBE_HTTP2;
+use super::message::ERR_MAYBE_HTTP2;
 
 pub async fn conn<T: AsyncStream + 'static>(
     stream: T,
@@ -23,16 +22,17 @@ pub async fn conn<T: AsyncStream + 'static>(
 
     let mut stream =
         BufStream::with_capacity(cfg.socket.read_buf_cap, cfg.socket.write_buf_cap, stream);
-    let mut rbuf = String::with_capacity(12);
+    let mut rbuf = String::with_capacity(cfg.message.read_buf_cap);
 
     loop {
         match Request::from11(&mut stream, &mut rbuf, cfg).await {
             Ok(req) => {
                 let mut ctx = Context::new(req);
                 handler.handler(&mut ctx).await;
-                ctx.resp.to11(&mut stream).await;
-                stream.flush().await;
-
+                let _ = ctx.resp.to11(&mut stream).await;
+                if let Err(_) = stream.flush().await {
+                    break;
+                }
                 match ctx.upgrade_protocol {
                     Protocol::Websocket(wsh) => {
                         tokio::spawn(ws::conn(stream, ac, cfg, wsh));
@@ -46,9 +46,7 @@ pub async fn conn<T: AsyncStream + 'static>(
                 }
             }
             Err(ev) => {
-				println!("Ev: {}", ev);
-
-                if ev == ERROR_MAYBE_HTTP2 {
+                if ev == ERR_MAYBE_HTTP2 {
                     rbuf.clear();
                     match stream.read_line(&mut rbuf).await {
                         Ok(line_size) => {
@@ -83,7 +81,6 @@ pub async fn conn<T: AsyncStream + 'static>(
                         }
                     }
                     tokio::spawn(http2::conn(stream, ac, cfg, handler));
-                    return;
                 }
                 break;
             }

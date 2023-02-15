@@ -61,16 +61,16 @@ pub struct ConfigMessage {
 impl ConfigMessage {
     fn autofix(&mut self) {
         if self.read_buf_cap < 1 {
-            self.read_buf_cap = 4096; // 4KB
+            self.read_buf_cap = 1024 * 8; // 8KB
         }
         if self.max_header_line_size < 1 {
-            self.max_header_line_size = 1024 * 8; // 8KB
+            self.max_header_line_size = 1024 * 8 + 16; // 8KB
         }
         if self.max_first_line_size < 1 {
-            self.max_first_line_size = 1024 * 6; // 6KB
+            self.max_first_line_size = 1024 * 6 + 64; // 6KB
         }
         if self.max_header_count < 1 {
-            self.max_header_count = 9999;
+            self.max_header_count = 120;
         }
     }
 }
