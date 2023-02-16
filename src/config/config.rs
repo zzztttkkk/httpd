@@ -11,7 +11,7 @@ pub struct ConfigHttp11 {
 
 impl ConfigHttp11 {
     fn autofix(&mut self) {
-        self.conn_idle_timeout.less_or(1, 5 * 1000);
+        self.conn_idle_timeout.less_then(1, 5 * 1000);
     }
 }
 
@@ -26,8 +26,8 @@ pub struct ConfigSocket {
 
 impl ConfigSocket {
     fn autofix(&mut self) {
-        self.read_buf_cap.less_or(1024, 1024 * 8);
-        self.write_buf_cap.less_or(1024, 1024 * 8);
+        self.read_buf_cap.less_then(1024, 1024 * 8);
+        self.write_buf_cap.less_then(1024, 1024 * 8);
     }
 }
 
@@ -54,10 +54,10 @@ pub struct ConfigMessage {
 
 impl ConfigMessage {
     fn autofix(&mut self) {
-        self.read_buf_cap.less_or(1, 1024 * 8); // 8KB
-        self.max_header_line_size.less_or(1, 1024 * 8 + 16); // 8KB + 16 Byte
-        self.max_first_line_size.less_or(1, 1024 * 6 + 64); // 6KB + 64Byte
-        self.max_incoming_body_size.less_or(1, 1024 * 1024 * 20); // 20MB
+        self.read_buf_cap.less_then(1, 1024 * 8); // 8KB
+        self.max_header_line_size.less_then(1, 1024 * 8 + 16); // 8KB + 16 Byte
+        self.max_first_line_size.less_then(1, 1024 * 6 + 64); // 6KB + 64Byte
+        self.max_incoming_body_size.less_then(1, 1024 * 1024 * 20); // 20MB
         if self.max_header_count < 1 {
             self.max_header_count = 120;
         }

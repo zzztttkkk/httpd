@@ -11,10 +11,14 @@ pub struct FsHandler {
     max_read_cap: u64,
 }
 
+impl FsHandler {
+    pub fn new() {
+		
+	}
+}
+
 impl Handler for FsHandler {
     fn handler<'a: 'b, 'b>(&self, ctx: &'a mut Context) -> FutureType<'b> {
-        Box::pin(async {
-			
-		})
+        Box::pin(async {})
     }
 }

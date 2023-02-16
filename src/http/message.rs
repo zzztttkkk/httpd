@@ -308,6 +308,7 @@ impl Message {
                             0 => {
                                 if rune == ' ' {
                                     fls += 1;
+                                    msg.f0 = msg.f0.to_uppercase();
                                     continue;
                                 }
                                 msg.f0.push(rune);

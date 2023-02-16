@@ -23,7 +23,7 @@ impl SizeInBytes {
     }
 
     #[inline(always)]
-    pub fn less_or(&mut self, cmp: u64, v: u64) {
+    pub fn less_then(&mut self, cmp: u64, v: u64) {
         if self.0 < cmp {
             self.0 = v;
         }
