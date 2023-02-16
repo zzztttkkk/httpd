@@ -9,16 +9,14 @@ use crate::config::Config;
 use crate::http::compress::{CompressType, CompressWriter, Deflate, Gzip};
 use crate::http::headers::Headers;
 
-pub struct ByteBufferWrapper {
-    ptr: *mut Option<ByteBuffer>,
-}
+pub struct ByteBufferWrapper(*mut Option<ByteBuffer>);
 
 unsafe impl Send for ByteBufferWrapper {}
 
 impl ByteBufferWrapper {
     #[inline(always)]
     fn bufref(&mut self) -> &mut ByteBuffer {
-        unsafe { self.ptr.as_mut().unwrap().as_mut().unwrap() }
+        unsafe { self.0.as_mut().unwrap().as_mut().unwrap() }
     }
 }
 
@@ -86,13 +84,13 @@ impl BodyBuf {
     pub fn decompress(&mut self, ct: CompressType) {
         match ct {
             CompressType::Gzip => {
-                self.decoder = Some(Box::new(flate2::read::GzDecoder::new(ByteBufferWrapper {
-                    ptr: &mut self.raw,
-                })));
+                self.decoder = Some(Box::new(flate2::read::GzDecoder::new(ByteBufferWrapper(
+                    &mut self.raw,
+                ))));
             }
             CompressType::Deflate => {
                 self.decoder = Some(Box::new(flate2::read::DeflateDecoder::new(
-                    ByteBufferWrapper { ptr: &mut self.raw },
+                    ByteBufferWrapper(&mut self.raw),
                 )));
             }
         }
@@ -103,13 +101,13 @@ impl BodyBuf {
         match ct {
             CompressType::Gzip => {
                 self.encoder = Some(Box::new(Gzip::with_level(
-                    ByteBufferWrapper { ptr: &mut self.raw },
+                    ByteBufferWrapper(&mut self.raw),
                     level,
                 )));
             }
             CompressType::Deflate => {
                 self.encoder = Some(Box::new(Deflate::with_level(
-                    ByteBufferWrapper { ptr: &mut self.raw },
+                    ByteBufferWrapper(&mut self.raw),
                     level,
                 )));
             }

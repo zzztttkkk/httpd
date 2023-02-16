@@ -10,13 +10,9 @@ pub trait CompressWriter: Write {
     fn finish(&mut self) -> std::io::Result<()>;
 }
 
-pub struct Gzip<W: Write> {
-    raw: flate2::write::GzEncoder<W>,
-}
+pub struct Gzip<W: Write>(flate2::write::GzEncoder<W>);
 
-pub struct Deflate<W: Write> {
-    raw: flate2::write::DeflateEncoder<W>,
-}
+pub struct Deflate<W: Write>(flate2::write::DeflateEncoder<W>);
 
 macro_rules! impl_compress_encoder {
     ($name:ty, $make:expr) => {
@@ -26,16 +22,12 @@ macro_rules! impl_compress_encoder {
         {
             #[inline(always)]
             pub fn new(w: W) -> Self {
-                Self {
-                    raw: $make(w, flate2::Compression::default()),
-                }
+                Self($make(w, flate2::Compression::default()))
             }
 
             #[inline(always)]
             pub fn with_level(w: W, level: flate2::Compression) -> Self {
-                Self {
-                    raw: $make(w, level),
-                }
+                Self($make(w, level))
             }
         }
 
@@ -45,12 +37,12 @@ macro_rules! impl_compress_encoder {
         {
             #[inline(always)]
             fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-                self.raw.write(buf)
+                self.0.write(buf)
             }
 
             #[inline(always)]
             fn flush(&mut self) -> std::io::Result<()> {
-                self.raw.flush()
+                self.0.flush()
             }
         }
 
@@ -60,7 +52,7 @@ macro_rules! impl_compress_encoder {
         {
             #[inline(always)]
             fn finish(&mut self) -> std::io::Result<()> {
-                self.raw.try_finish()
+                self.0.try_finish()
             }
         }
     };
