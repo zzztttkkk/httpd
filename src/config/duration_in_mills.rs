@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use serde::{de::Visitor, Deserialize};
 
 use super::split_unit::split_unit;
@@ -9,6 +11,11 @@ impl DurationInMills {
     #[inline(always)]
     pub fn u64(&self) -> u64 {
         self.0
+    }
+
+    #[inline(always)]
+    pub fn duration(&self) -> Duration {
+        Duration::from_millis(self.0)
     }
 
     #[inline(always)]
