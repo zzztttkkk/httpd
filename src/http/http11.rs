@@ -30,8 +30,8 @@ pub async fn conn<T: AsyncStream + 'static>(
 
     loop {
         tokio::select! {
-            reqr = Request::from11(&mut stream, &mut rbuf, cfg) => {
-                match reqr {
+            parse_result = Request::from11(&mut stream, &mut rbuf, cfg) => {
+                match parse_result {
                     Ok(req) => {
                         let mut ctx = Context::new(req);
                         handler.handler(&mut ctx).await;

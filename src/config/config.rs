@@ -70,9 +70,6 @@ pub struct Config {
     pub addr: String,
 
     #[serde(default)]
-    pub log_config_file: String,
-
-    #[serde(default)]
     pub tls: ConfigTLS,
 
     #[serde(default)]

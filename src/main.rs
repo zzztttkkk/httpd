@@ -48,6 +48,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let ac = AtomicI64::new(0);
     let ac: &'static AtomicI64 = unsafe { std::mem::transmute(&ac) };
+    let wc = AtomicI64::new(0);
+    let wc: &'static AtomicI64 = unsafe { std::mem::transmute(&wc) };
+
     let handler: Box<dyn Handler> = Box::new(func!(ctx, {
         println!("XXX");
         ctx.response().text("hello world");
@@ -63,6 +66,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         continue;
                     }
                     Ok((stream, _)) => {
+                        let cwc = wc.load(Ordering::Relaxed) + 1;
+                        if(cwc > 200){
+                            continue;
+                        }
+
+                        if(ac.load(Ordering::Relaxed) > 1000){
+                            wc.fetch_add(1, Ordering::Relaxed);
+                            while(ac.load(Ordering::Relaxed) > 1000) {
+                                tokio::time::sleep(Duration::from_millis(10)).await;
+                            }
+                            wc.fetch_sub(1, Ordering::Relaxed);
+                        }
+
                         let tls_acceptor = tls_acceptor.clone();
                         tokio::spawn(async move {
                             if let Some(tls_acceptor) = tls_acceptor {
