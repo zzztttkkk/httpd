@@ -22,12 +22,28 @@ pub struct ConfigSocket {
 
     #[serde(default)]
     pub write_buf_cap: SizeInBytes,
+
+    #[serde(default)]
+    pub max_alive_sockets: i64,
+
+    #[serde(default)]
+    pub max_waiting_sockets: i64,
+
+    #[serde(default)]
+    pub waiting_step: DurationInMills,
+
+    #[serde(default)]
+    pub max_waiting_times: i64,
 }
 
 impl ConfigSocket {
     fn autofix(&mut self) {
         self.read_buf_cap.less_then(1024, 1024 * 8);
         self.write_buf_cap.less_then(1024, 1024 * 8);
+        self.waiting_step.less_then(1, 50);
+        if (self.max_waiting_times < 1) {
+            self.max_waiting_times = 20;
+        }
     }
 }
 

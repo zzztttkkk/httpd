@@ -5,14 +5,27 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use clap::Parser;
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
 
 use crate::config::{Args, Config};
 use crate::http::Handler;
+use crate::utils::AutoCounter;
 
 mod config;
 mod http;
 mod utils;
+
+async fn is_alive(stream: &TcpStream) -> bool {
+    let mut tmp = [0; 1];
+    tokio::select! {
+        rr = stream.peek(&mut tmp) =>  {
+            return  rr.is_ok();
+        }
+        _ = tokio::time::sleep(Duration::from_millis(3)) => {
+            return false;
+        }
+    }
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -66,21 +79,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         continue;
                     }
                     Ok((stream, _)) => {
-                        let cwc = wc.load(Ordering::Relaxed) + 1;
-                        if(cwc > 200){
-                            continue;
-                        }
-
-                        if(ac.load(Ordering::Relaxed) > 1000){
-                            wc.fetch_add(1, Ordering::Relaxed);
-                            while(ac.load(Ordering::Relaxed) > 1000) {
-                                tokio::time::sleep(Duration::from_millis(10)).await;
-                            }
-                            wc.fetch_sub(1, Ordering::Relaxed);
-                        }
-
                         let tls_acceptor = tls_acceptor.clone();
                         tokio::spawn(async move {
+                            if(config.socket.max_alive_sockets > 0){
+                                if(config.socket.max_waiting_sockets > 0 && wc.load(Ordering::Relaxed) > config.socket.max_waiting_sockets){
+                                    return;
+                                }
+
+                                if(ac.load(Ordering::Relaxed) >= config.socket.max_alive_sockets){
+                                    let __awc = AutoCounter::new(wc);
+
+                                    let mut waitting_times: i64 = 0;
+                                    while(ac.load(Ordering::Relaxed) > config.socket.max_alive_sockets) {
+                                        tokio::time::sleep(config.socket.waiting_step.duration()).await;
+                                        waitting_times +=1;
+                                        if(waitting_times >= config.socket.max_waiting_times){
+                                            return;
+                                        }
+                                    }
+
+                                    if(!(is_alive(&stream).await)){
+                                        return;
+                                    }
+                                }
+                            }
+
+
                             if let Some(tls_acceptor) = tls_acceptor {
                                 if let Ok(stream) = tls_acceptor.accept(stream).await{
                                     http::conn(stream, ac, config, handler).await;
