@@ -20,9 +20,12 @@ pub async fn conn<T: AsyncStream + 'static>(
 ) {
     let __ac = utils::AutoCounter::new(ac);
 
-    let mut stream =
-        BufStream::with_capacity(cfg.socket.read_buf_cap, cfg.socket.write_buf_cap, stream);
-    let mut rbuf = String::with_capacity(cfg.message.read_buf_cap);
+    let mut stream = BufStream::with_capacity(
+        cfg.socket.read_buf_cap.usize(),
+        cfg.socket.write_buf_cap.usize(),
+        stream,
+    );
+    let mut rbuf = String::with_capacity(cfg.message.read_buf_cap.usize());
 
     loop {
         match Request::from11(&mut stream, &mut rbuf, cfg).await {

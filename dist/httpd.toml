@@ -1,5 +1,5 @@
 [message]
-max_incoming_body_size = 1024
+max_incoming_body_size = "10MB"
 
 [tls]
 cert = "./dist/httpd.local+2.pem"

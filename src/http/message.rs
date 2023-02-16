@@ -228,6 +228,7 @@ enum ReadStatus {
 }
 
 pub static ERR_BAD_STREAM: u32 = 0;
+pub static ERR_IN_COMING_BODY_TOO_LATGE: u32 = 413;
 pub static ERR_FIRST_LINE_TOO_LARGE: u32 = 414;
 pub static ERR_NON_ASCII_IN_FIRST_LINE: u32 = 400;
 pub static ERR_HEADER_LINE_TOOL_LARGE: u32 = 431;
@@ -268,7 +269,7 @@ impl Message {
     ) -> Result<Box<Self>, u32> {
         buf.clear();
         match reader
-            .take((cfg.message.max_first_line_size) as u64)
+            .take(cfg.message.max_first_line_size.u64())
             .read_line(buf)
             .await
         {
@@ -276,7 +277,7 @@ impl Message {
                 if (line_size <= 2) {
                     return Err(ERR_BAD_STREAM);
                 }
-                if line_size >= cfg.message.max_first_line_size {
+                if line_size >= cfg.message.max_first_line_size.usize() {
                     return Err(ERR_FIRST_LINE_TOO_LARGE);
                 }
             }
@@ -334,7 +335,7 @@ impl Message {
                 ReadStatus::Headers => {
                     buf.clear();
                     match reader
-                        .take((cfg.message.max_header_line_size) as u64)
+                        .take(cfg.message.max_header_line_size.u64())
                         .read_line(buf)
                         .await
                     {
@@ -350,10 +351,10 @@ impl Message {
                                 } else {
                                     let cl = msg.headers.content_length();
                                     if cl > 0 {
-                                        if cfg.message.max_incoming_body_size > 0
-                                            && cl > cfg.message.max_incoming_body_size
+                                        if cfg.message.max_incoming_body_size.usize() > 0
+                                            && cl > cfg.message.max_incoming_body_size.usize()
                                         {
-                                            return Err(0);
+                                            return Err(ERR_IN_COMING_BODY_TOO_LATGE);
                                         }
 
                                         body_remains = cl as i64;
@@ -376,7 +377,7 @@ impl Message {
                                 continue;
                             }
 
-                            if line_size >= cfg.message.max_header_line_size {
+                            if line_size >= cfg.message.max_header_line_size.usize() {
                                 return Err(ERR_HEADER_LINE_TOOL_LARGE);
                             }
 

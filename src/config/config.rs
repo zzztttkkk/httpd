@@ -1,58 +1,52 @@
 use clap::Parser;
 use serde::Deserialize;
 
-use super::tls::ConfigTLS;
+use super::{duration_in_mills::DurationInMills, size_in_bytes::SizeInBytes, tls::ConfigTLS};
 
 #[derive(Deserialize, Clone, Default)]
 pub struct ConfigHttp11 {
     #[serde(default)]
-    pub conn_idle_timeout: u64,
+    pub conn_idle_timeout: DurationInMills,
 }
 
 impl ConfigHttp11 {
     fn autofix(&mut self) {
-        if self.conn_idle_timeout < 1 {
-            self.conn_idle_timeout = 5; // 5s
-        }
+        self.conn_idle_timeout.less_or(1, 5 * 1000);
     }
 }
 
 #[derive(Deserialize, Clone, Default)]
 pub struct ConfigSocket {
     #[serde(default)]
-    pub read_buf_cap: usize,
+    pub read_buf_cap: SizeInBytes,
 
     #[serde(default)]
-    pub write_buf_cap: usize,
+    pub write_buf_cap: SizeInBytes,
 }
 
 impl ConfigSocket {
     fn autofix(&mut self) {
-        if self.read_buf_cap < 1 {
-            self.read_buf_cap = 8 * 1024; // 8KB
-        }
-        if self.write_buf_cap < 1 {
-            self.write_buf_cap = 8 * 1024; // 8KB
-        }
+        self.read_buf_cap.less_or(1024, 1024 * 8);
+        self.write_buf_cap.less_or(1024, 1024 * 8);
     }
 }
 
 #[derive(Deserialize, Clone, Default)]
 pub struct ConfigMessage {
     #[serde(default)]
-    pub max_incoming_body_size: usize,
+    pub max_incoming_body_size: SizeInBytes,
 
     #[serde(default)]
-    pub read_buf_cap: usize,
+    pub read_buf_cap: SizeInBytes,
 
     #[serde(default)]
-    pub max_header_line_size: usize,
+    pub max_header_line_size: SizeInBytes,
 
     #[serde(default)]
     pub max_header_count: usize,
 
     #[serde(default)]
-    pub max_first_line_size: usize,
+    pub max_first_line_size: SizeInBytes,
 
     #[serde(default)]
     pub disbale_compression: bool,
@@ -60,15 +54,10 @@ pub struct ConfigMessage {
 
 impl ConfigMessage {
     fn autofix(&mut self) {
-        if self.read_buf_cap < 1 {
-            self.read_buf_cap = 1024 * 8; // 8KB
-        }
-        if self.max_header_line_size < 1 {
-            self.max_header_line_size = 1024 * 8 + 16; // 8KB
-        }
-        if self.max_first_line_size < 1 {
-            self.max_first_line_size = 1024 * 6 + 64; // 6KB
-        }
+        self.read_buf_cap.less_or(1, 1024 * 8); // 8KB
+        self.max_header_line_size.less_or(1, 1024 * 8 + 16); // 8KB + 16 Byte
+        self.max_first_line_size.less_or(1, 1024 * 6 + 64); // 6KB + 64Byte
+        self.max_incoming_body_size.less_or(1, 1024 * 1024 * 20); // 20MB
         if self.max_header_count < 1 {
             self.max_header_count = 120;
         }
