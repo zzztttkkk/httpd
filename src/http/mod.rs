@@ -1,19 +1,20 @@
 pub use handler::Handler;
-pub use http11::conn as conn;
+pub use http11::conn;
+pub use serve::serve;
 
 pub mod http11;
 mod rwtypes;
 #[macro_use]
 pub mod handler;
+mod compress;
+mod ctx;
+mod fs;
+mod headers;
+mod http2;
+mod message;
 mod request;
 mod response;
-mod ctx;
-mod message;
-mod headers;
-mod compress;
+mod serve;
+mod status;
 mod ws;
 mod ws_handler;
-mod http2;
-mod fs;
-mod status;
-

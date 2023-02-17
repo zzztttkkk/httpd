@@ -13,6 +13,7 @@ use crate::utils;
 
 use super::message::ERR_MAYBE_HTTP2;
 
+// https://github.com/pretzelhammer/rust-blog/blob/master/posts/common-rust-lifetime-misconceptions.md#2-if-t-static-then-t-must-be-valid-for-the-entire-program
 pub async fn conn<T: AsyncStream + 'static>(
     stream: T,
     ac: &'static AtomicI64,
