@@ -48,7 +48,7 @@ impl ConfigSocket {
 }
 
 #[derive(Deserialize, Clone, Default)]
-pub struct ConfigMessage {
+pub struct ConfigHTTPMessage {
     #[serde(default)]
     pub max_incoming_body_size: SizeInBytes,
 
@@ -68,7 +68,7 @@ pub struct ConfigMessage {
     pub disbale_compression: bool,
 }
 
-impl ConfigMessage {
+impl ConfigHTTPMessage {
     fn autofix(&mut self) {
         self.read_buf_cap.less_then(1, 1024 * 8); // 8KB
         self.max_header_line_size.less_then(1, 1024 * 8 + 16); // 8KB + 16 Byte
@@ -89,7 +89,7 @@ pub struct Config {
     pub tls: ConfigTLS,
 
     #[serde(default)]
-    pub message: ConfigMessage,
+    pub http: ConfigHTTPMessage,
 
     #[serde(default)]
     pub socket: ConfigSocket,
@@ -101,7 +101,7 @@ pub struct Config {
 impl Config {
     pub fn autofix(&mut self) {
         self.tls.autofix();
-        self.message.autofix();
+        self.http.autofix();
         self.socket.autofix();
         self.http11.autofix();
     }

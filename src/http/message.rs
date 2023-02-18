@@ -204,6 +204,7 @@ pub struct Range {
     pub length: u64,
 }
 
+#[derive(Default)]
 pub struct Message {
     pub(crate) f0: String,
     pub(crate) f1: String,
@@ -225,28 +226,20 @@ enum ReadStatus {
     Ok,
 }
 
-pub static ERR_BAD_STREAM: u32 = 0;
 pub static ERR_IN_COMING_BODY_TOO_LATGE: u32 = 413;
 pub static ERR_FIRST_LINE_TOO_LARGE: u32 = 414;
 pub static ERR_NON_ASCII_IN_FIRST_LINE: u32 = 400;
 pub static ERR_HEADER_LINE_TOOL_LARGE: u32 = 431;
 pub static ERR_HEADERS_COUNT_TOO_MANY: u32 = 431;
-pub static ERR_NON_ASCII_IN_HEADERS: u32 = 2;
+
+pub static ERR_BAD_STREAM: u32 = 0;
+pub static ERR_NON_ASCII_IN_HEADER_KEY: u32 = 2;
+pub static ERR_BAD_PROTOCOL: u32 = 3;
 pub static ERR_MAYBE_HTTP2: u32 = 99;
 
 impl Message {
     pub(crate) fn new() -> Self {
-        Self {
-            f0: "".to_string(),
-            f1: "".to_string(),
-            f2: "".to_string(),
-            headers: Headers::new(),
-            bodybuf: None,
-            output_compress_type: None,
-            output_content_type: "".to_string(),
-            output_readobj: None,
-            output_ranges: None,
-        }
+        Default::default()
     }
 
     pub(crate) fn clear(&mut self) {
@@ -259,7 +252,6 @@ impl Message {
         }
     }
 
-    // todo safe read_line
     pub(crate) async fn from11<'a, R: AsyncBufReadExt + Unpin>(
         reader: &'a mut R,
         buf: &'a mut String,
@@ -267,15 +259,15 @@ impl Message {
     ) -> Result<Box<Self>, u32> {
         buf.clear();
         match reader
-            .take(cfg.message.max_first_line_size.u64())
-            .read_line(buf)
+            .take(cfg.http.max_first_line_size.u64())
+            .read_until('\n' as u8, unsafe { buf.as_mut_vec() })
             .await
         {
             Ok(line_size) => {
                 if (line_size <= 2) {
                     return Err(ERR_BAD_STREAM);
                 }
-                if line_size >= cfg.message.max_first_line_size.usize() {
+                if line_size >= cfg.http.max_first_line_size.usize() {
                     return Err(ERR_FIRST_LINE_TOO_LARGE);
                 }
             }
@@ -297,45 +289,53 @@ impl Message {
                     }
 
                     let mut fls = 0;
-                    for rune in buf.chars() {
-                        if rune > 127 as char {
+                    for b in buf.bytes() {
+                        if b > 127 {
                             return Err(ERR_NON_ASCII_IN_FIRST_LINE);
                         }
 
                         match fls {
                             0 => {
-                                if rune == ' ' {
+                                if b == ' ' as u8 {
                                     fls += 1;
-                                    msg.f0 = msg.f0.to_uppercase();
                                     continue;
                                 }
-                                msg.f0.push(rune);
+
+                                unsafe { msg.f0.as_mut_vec().push(b.to_ascii_uppercase()) };
                             }
                             1 => {
-                                if rune == ' ' {
+                                if b == ' ' as u8 {
                                     fls += 1;
                                     continue;
                                 }
-                                msg.f1.push(rune);
+                                unsafe { msg.f1.as_mut_vec().push(b) };
                             }
                             2 => {
-                                if rune == '\r' {
+                                if b == '\r' as u8 {
+                                    if (!msg.f2.starts_with("HTTP/") || msg.f2.len() < 6) {
+                                        return Err(ERR_BAD_PROTOCOL);
+                                    }
+                                    let major = msg.f2.as_bytes()[5];
+                                    if (major != '0' as u8 || major != '1' as u8) {
+                                        return Err(ERR_BAD_PROTOCOL);
+                                    }
                                     break;
                                 }
-                                msg.f2.push(rune);
+                                unsafe { msg.f2.as_mut_vec().push(b.to_ascii_uppercase()) };
                             }
                             _ => {
                                 break;
                             }
                         }
                     }
+
                     status = ReadStatus::Headers;
                 }
                 ReadStatus::Headers => {
                     buf.clear();
                     match reader
-                        .take(cfg.message.max_header_line_size.u64())
-                        .read_line(buf)
+                        .take(cfg.http.max_header_line_size.u64())
+                        .read_until('\n' as u8, unsafe { buf.as_mut_vec() })
                         .await
                     {
                         Ok(line_size) => {
@@ -350,8 +350,8 @@ impl Message {
                                 } else {
                                     let cl = msg.headers.content_length();
                                     if cl > 0 {
-                                        if cfg.message.max_incoming_body_size.usize() > 0
-                                            && cl > cfg.message.max_incoming_body_size.usize()
+                                        if cfg.http.max_incoming_body_size.usize() > 0
+                                            && cl > cfg.http.max_incoming_body_size.usize()
                                         {
                                             return Err(ERR_IN_COMING_BODY_TOO_LATGE);
                                         }
@@ -376,16 +376,12 @@ impl Message {
                                 continue;
                             }
 
-                            if line_size >= cfg.message.max_header_line_size.usize() {
+                            if line_size >= cfg.http.max_header_line_size.usize() {
                                 return Err(ERR_HEADER_LINE_TOOL_LARGE);
                             }
 
-                            if header_count > cfg.message.max_header_count {
+                            if header_count > cfg.http.max_header_count {
                                 return Err(ERR_HEADERS_COUNT_TOO_MANY);
-                            }
-
-                            if !buf.is_ascii() {
-                                return Err(ERR_NON_ASCII_IN_HEADERS);
                             }
 
                             let mut parts = buf.splitn(2, ':');
@@ -396,17 +392,21 @@ impl Message {
                                 Some(v) => v,
                             };
 
+                            if !key.is_ascii() {
+                                return Err(ERR_NON_ASCII_IN_HEADER_KEY);
+                            }
+
                             match parts.next() {
                                 None => {
                                     return Err(ERR_BAD_STREAM);
                                 }
                                 Some(v) => {
-                                    msg.headers.append(key, v.trim());
+                                    msg.headers.append(key.trim(), v.trim());
                                     header_count += 1;
                                 }
                             }
                         }
-                        Err(e_) => {
+                        Err(_) => {
                             return Err(ERR_BAD_STREAM);
                         }
                     }

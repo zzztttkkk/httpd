@@ -1,19 +1,12 @@
 use std::collections::HashMap;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct MultiValuesMap {
     pub(crate) _map: Option<HashMap<String, Vec<String>>>,
     pub(crate) case_sensitive: bool,
 }
 
 impl MultiValuesMap {
-    pub fn new() -> Self {
-        Self {
-            _map: None,
-            case_sensitive: true,
-        }
-    }
-
     pub fn map(&self) -> Option<&HashMap<String, Vec<String>>> {
         self._map.as_ref()
     }

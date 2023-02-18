@@ -6,7 +6,14 @@ use tokio::io::{AsyncRead, AsyncWrite, BufStream};
 use crate::config::Config;
 use crate::utils;
 
+use super::ctx::Context;
 use super::ws_handler::WebSocketHandler;
+
+pub async fn handshake(ctx: &mut Context) {
+    if !ctx.request().method_is_get() {
+        return;
+    }
+}
 
 pub async fn conn<RW: AsyncRead + AsyncWrite>(
     stream: BufStream<RW>,

@@ -50,7 +50,6 @@ pub async fn serve(config: &'static Config) -> Result<(), Box<dyn std::error::Er
     let wc: &'static AtomicI64 = unsafe { std::mem::transmute(&wc) };
 
     let handler: Box<dyn Handler> = Box::new(func!(ctx, {
-        println!("XXX");
         ctx.response().text("hello world");
     }));
     let handler: &'static Box<dyn Handler> = unsafe { std::mem::transmute(&handler) };

@@ -1,3 +1,5 @@
+use std::any::Any;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::http::request::Request;
@@ -11,6 +13,7 @@ pub enum Protocol {
 }
 
 pub struct Context {
+    pub(crate) data: Option<HashMap<String, Box<dyn Any + Send + 'static>>>,
     pub(crate) req: Request,
     pub(crate) resp: Response,
 
@@ -26,12 +29,57 @@ impl Context {
         }
 
         Self {
+            data: None,
             req,
             resp,
             upgrade_protocol: Protocol::Nil,
         }
     }
+}
 
+impl Context {
+    pub fn get<'s, 'k, T: Any + Send + 'static>(&'s mut self, key: &'k str) -> Option<&'s mut T> {
+        match self.data.as_mut() {
+            Some(m) => match m.get_mut(key) {
+                Some(val) => val.downcast_mut(),
+                None => None,
+            },
+            None => None,
+        }
+    }
+
+    pub fn peek<'s, 'k, T: Any + Send + 'static>(&'s self, key: &'k str) -> Option<&'s T> {
+        match self.data.as_ref() {
+            Some(m) => match m.get(key) {
+                Some(val) => val.downcast_ref(),
+                None => None,
+            },
+            None => None,
+        }
+    }
+
+    pub fn contains(&self, key: &str) -> bool {
+        match self.data.as_ref() {
+            Some(m) => m.contains_key(key),
+            None => false,
+        }
+    }
+
+    pub fn set(&mut self, key: &str, val: Box<dyn Any + Send + 'static>) {
+        match self.data.as_mut() {
+            Some(m) => {
+                m.insert(key.to_string(), val);
+            }
+            None => {
+                let mut m = HashMap::new();
+                m.insert(key.to_string(), val);
+                self.data = Some(m);
+            }
+        }
+    }
+}
+
+impl Context {
     pub fn upgrade(&mut self, protocol: Protocol) {
         self.upgrade_protocol = protocol;
     }

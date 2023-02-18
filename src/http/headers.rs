@@ -1,37 +1,19 @@
+use std::cell::UnsafeCell;
 use std::collections::HashMap;
 
 use crate::http::compress::CompressType;
 use crate::utils::MultiValuesMap;
 
-#[derive(Debug)]
+#[derive(Default)]
 pub struct Headers {
     map: Option<MultiValuesMap>,
-
-    _content_length: Option<usize>,
-    _is_chunked: Option<bool>,
-    _in_compress_type: Option<Option<CompressType>>,
-    _out_compress_type: Option<Option<CompressType>>,
 }
 
 impl Headers {
-    pub fn new() -> Self {
-        Self {
-            map: None,
-            _content_length: None,
-            _is_chunked: None,
-            _in_compress_type: None,
-            _out_compress_type: None,
-        }
-    }
-
     pub fn clear(&mut self) {
         if let Some(map) = &mut self.map {
             map.clear();
         }
-        self._content_length = None;
-        self._is_chunked = None;
-        self._in_compress_type = None;
-        self._out_compress_type = None;
     }
 
     pub fn map(&self) -> Option<&HashMap<String, Vec<String>>> {
@@ -110,32 +92,26 @@ impl Headers {
         }
     }
 
-    pub fn content_length(&mut self) -> usize {
-        match &mut self._content_length {
+    pub fn content_length(&self) -> usize {
+        let l: usize;
+        match self.get("content-length") {
             None => {
-                let l: usize;
-                match self.get("content-length") {
-                    None => {
-                        l = 0;
-                    }
-                    Some(s) => match s.parse::<usize>() {
-                        Ok(v) => {
-                            l = v;
-                        }
-                        Err(_) => {
-                            l = 0;
-                        }
-                    },
-                }
-                self._content_length = Some(l);
-                l
+                l = 0;
             }
-            Some(v) => *v,
+            Some(s) => match s.parse::<usize>() {
+                Ok(v) => {
+                    l = v;
+                }
+                Err(_) => {
+                    l = 0;
+                }
+            },
         }
+        l
     }
 
     pub fn set_content_length(&mut self, len: usize) {
-        self.set("content-length", len.to_string().as_str())
+        self.set("content-length", len.to_string().as_str());
     }
 
     pub fn content_type(&self) -> Option<&String> {
@@ -146,33 +122,15 @@ impl Headers {
         self.set("content-type", val)
     }
 
-    pub fn content_encoding(&mut self) -> Option<CompressType> {
-        match &mut self._in_compress_type {
-            Some(v) => {
-                return *v;
-            }
-            None => {
-                let v = self.compress_type("content-encoding");
-                self._in_compress_type = Some(v);
-                return v;
-            }
-        }
+    pub fn content_encoding(&self) -> Option<CompressType> {
+        self.compress_type("content-encoding")
     }
 
-    pub fn accept_encoding(&mut self) -> Option<CompressType> {
-        match &mut self._out_compress_type {
-            Some(v) => {
-                return *v;
-            }
-            None => {
-                let v = self.compress_type("accept-encoding");
-                self._out_compress_type = Some(v);
-                return v;
-            }
-        }
+    pub fn accept_encoding(&self) -> Option<CompressType> {
+        self.compress_type("accept-encoding")
     }
 
-    fn compress_type(&mut self, key: &str) -> Option<CompressType> {
+    fn compress_type(&self, key: &str) -> Option<CompressType> {
         match self.get_all(key) {
             None => None,
             Some(vec) => {
@@ -213,40 +171,34 @@ impl Headers {
         }
     }
 
-    pub fn ischunked(&mut self) -> bool {
-        match self._is_chunked {
-            None => {
-                let mut v: bool = false;
+    pub fn ischunked(&self) -> bool {
+        let mut v: bool = false;
 
-                match self.get_all("transfer-encoding") {
-                    None => {}
-                    Some(vec) => {
-                        for item in vec.iter() {
-                            if item == "chunked" {
-                                v = true;
-                                break;
-                            }
+        match self.get_all("transfer-encoding") {
+            None => {}
+            Some(vec) => {
+                for item in vec.iter() {
+                    if item == "chunked" {
+                        v = true;
+                        break;
+                    }
 
-                            if !item.contains(',') {
-                                continue;
-                            }
+                    if !item.contains(',') {
+                        continue;
+                    }
 
-                            let fo = item
-                                .split(',')
-                                .map(|v| v.trim())
-                                .find(|&x| x.starts_with("chunked"));
-                            if fo.is_some() {
-                                v = true;
-                                break;
-                            }
-                        }
+                    let fo = item
+                        .split(',')
+                        .map(|v| v.trim())
+                        .find(|&x| x.starts_with("chunked"));
+                    if fo.is_some() {
+                        v = true;
+                        break;
                     }
                 }
-
-                self._is_chunked = Some(v);
-                v
             }
-            Some(v) => v,
         }
+
+        v
     }
 }

@@ -52,13 +52,20 @@ impl Write for Response {
 }
 
 impl Response {
-    pub fn text(&mut self, txt: &str) {
-        self.msg.headers.set_content_type("text/plain");
-        self.msg.write(txt.as_bytes());
+    pub fn status(&mut self, code: u32) -> &mut Self {
+        self._status_code = code;
+        self
     }
 
-    pub fn html(&mut self, html: &str) {
+    pub fn text(&mut self, txt: &str) -> &mut Self {
+        self.msg.headers.set_content_type("text/plain");
+        self.msg.write(txt.as_bytes());
+        self
+    }
+
+    pub fn html(&mut self, html: &str) -> &mut Self {
         self.msg.headers.set_content_type("text/html");
         self.msg.write(html.as_bytes());
+        self
     }
 }

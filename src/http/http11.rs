@@ -13,6 +13,14 @@ use crate::utils;
 
 use super::message::ERR_MAYBE_HTTP2;
 
+fn can_keep_alive(v: &str) -> bool {
+    let major = v.as_bytes()[5];
+    if (major == '0' as u8) {
+        return false;
+    }
+    return v.ends_with(".0");
+}
+
 // https://github.com/pretzelhammer/rust-blog/blob/master/posts/common-rust-lifetime-misconceptions.md#2-if-t-static-then-t-must-be-valid-for-the-entire-program
 pub async fn conn<T: AsyncStream + 'static>(
     stream: T,
@@ -27,7 +35,7 @@ pub async fn conn<T: AsyncStream + 'static>(
         cfg.socket.write_buf_cap.usize(),
         stream,
     );
-    let mut rbuf = String::with_capacity(cfg.message.read_buf_cap.usize());
+    let mut rbuf = String::with_capacity(cfg.http.read_buf_cap.usize());
 
     loop {
         tokio::select! {
@@ -37,7 +45,7 @@ pub async fn conn<T: AsyncStream + 'static>(
                         let mut ctx = Context::new(req);
                         handler.handler(&mut ctx).await;
                         let _ = ctx.resp.to11(&mut stream).await;
-                        if let Err(_) = stream.flush().await {
+                        if (stream.flush().await).is_err() {
                             break;
                         }
                         match ctx.upgrade_protocol {
@@ -49,7 +57,17 @@ pub async fn conn<T: AsyncStream + 'static>(
                                 tokio::spawn(http2::conn(stream, ac, cfg, handler));
                                 return;
                             }
-                            Protocol::Nil => {}
+                            Protocol::Nil => {
+                                if(!can_keep_alive(ctx.req.msg.f2.as_str())){
+                                    return;
+                                }
+
+                                if let Some(cv) = ctx.resp.msg.headers.get("connection") {
+                                    if(cv == "close") {
+                                        return;
+                                    }
+                                }
+                            }
                         }
                     }
                     Err(ev) => {

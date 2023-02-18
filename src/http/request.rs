@@ -53,4 +53,6 @@ impl Request {
     make_method_assert!(method_is_post, "POST");
     make_method_assert!(method_is_put, "PUT");
     make_method_assert!(method_is_trace, "TRACE");
+
+    pub fn headers(&self) {}
 }

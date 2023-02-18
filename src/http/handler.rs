@@ -5,11 +5,13 @@ use crate::http::ctx::Context;
 
 pub type FutureType<'a> = Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
 
-pub trait Handler: Sync + Send {
+pub trait Handler: Send + Sync {
     fn handler<'a: 'b, 'b>(&self, ctx: &'a mut Context) -> FutureType<'b>;
 }
 
-pub struct FuncHandler(Box<dyn Fn(&mut Context) -> FutureType + Send + Sync>);
+type HandlerFuncType = dyn (Fn(&mut Context) -> FutureType) + Send + Sync;
+
+pub struct FuncHandler(Box<HandlerFuncType>);
 
 impl Handler for FuncHandler {
     fn handler<'a: 'b, 'b>(&self, ctx: &'a mut Context) -> FutureType<'b> {
@@ -18,7 +20,7 @@ impl Handler for FuncHandler {
 }
 
 impl FuncHandler {
-    pub fn new(f: Box<dyn Fn(&mut Context) -> FutureType + Send + Sync>) -> Self {
+    pub fn new(f: Box<HandlerFuncType>) -> Self {
         FuncHandler(f)
     }
 }
