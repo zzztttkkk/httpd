@@ -2,7 +2,7 @@ use tokio::io::AsyncBufReadExt;
 
 use crate::config::Config;
 
-use super::message::Message;
+use super::{headers::Headers, message::Message};
 
 pub struct Request {
     pub(crate) msg: Box<Message>,
@@ -54,5 +54,13 @@ impl Request {
     make_method_assert!(method_is_put, "PUT");
     make_method_assert!(method_is_trace, "TRACE");
 
-    pub fn headers(&self) {}
+    #[inline]
+    pub fn headers(&self) -> &Headers {
+        &self.msg.headers
+    }
+
+    #[inline]
+    pub fn headers_mut(&mut self) -> &mut Headers {
+        &mut self.msg.headers
+    }
 }

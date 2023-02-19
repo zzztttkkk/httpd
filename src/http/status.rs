@@ -5,9 +5,9 @@ use once_cell::sync::Lazy;
 pub static STATUS_CODES: Lazy<HashMap<u32, String>> = Lazy::new(|| {
     let mut m = HashMap::new();
 
-    let items = // https://developer.mozilla.org/en-US/docs/Web/HTTP/Status
+    // https://developer.mozilla.org/en-US/docs/Web/HTTP/Status
     // JSON.stringify(Array.from(temp1.querySelectorAll("li a code")).map(v => v.innerText), null, 2)
-    vec![
+    let items = vec![
         "100 Continue",
         "101 Switching Protocols",
         "103 Early Hints",

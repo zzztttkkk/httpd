@@ -26,16 +26,42 @@ pub struct ReadonlyUri {
 
 unsafe impl Send for ReadonlyUri {}
 
+fn read_str_ptr(ptr: *const str) -> &'static str {
+    if (ptr.is_null()) {
+        return "";
+    }
+    unsafe { &*ptr }
+}
+
 impl fmt::Debug for ReadonlyUri {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         if !self._parsed {
-            return write!(f, "Uri(unparsed){{raw: `{}`}}", unsafe { &*self._raw });
+            return write!(f, "ReadonlyUri(unparsed){{raw: `{}`}}", unsafe {
+                &*self._raw
+            });
         }
         write!(
             f,
-            "Uri{{raw: `{}`, path: `{}`}}",
-            unsafe { &*self._raw },
-            unsafe { &*self._path }
+            r#"ReadonlyUri{{
+	raw: `{}`, 
+	scheme: `{}`,
+	username: `{}`,
+	password: `{}`,
+	host: `{}`,
+	port: `{}`,
+	path: `{}`,
+	raw_query: `{}`,
+	fragment: `{}`
+}}"#,
+            read_str_ptr(self._raw),
+            read_str_ptr(self._scheme),
+            read_str_ptr(self._username),
+            read_str_ptr(self._password),
+            read_str_ptr(self._host),
+            read_str_ptr(self._port),
+            read_str_ptr(self._path),
+            read_str_ptr(self._raw_query),
+            read_str_ptr(self._fragment)
         )
     }
 }
@@ -44,7 +70,7 @@ macro_rules! make_uri_getter {
     ($name:ident, $field:ident) => {
         pub fn $name(&mut self) -> &str {
             if !self._parsed {
-                self.parse();
+                self._parse();
             }
             unsafe { &*self.$field }
         }
@@ -72,6 +98,12 @@ impl ReadonlyUri {
         }
     }
 
+    pub fn parse(raw: *const str) -> Self {
+        let mut v = Self::new(raw);
+        v._parse();
+        v
+    }
+
     make_uri_getter!(scheme, _scheme);
     make_uri_getter!(username, _username);
     make_uri_getter!(password, _password);
@@ -82,7 +114,7 @@ impl ReadonlyUri {
     pub fn path(&mut self) -> &String {
         if self._safe_path.is_none() {
             if !self._parsed {
-                self.parse();
+                self._parse();
             }
 
             let raw_path = unsafe { &*self._path };
@@ -117,7 +149,7 @@ impl ReadonlyUri {
 
     pub fn port(&mut self) -> u32 {
         if !self._parsed {
-            self.parse()
+            self._parse()
         }
 
         if self._port_num < 0 {
@@ -139,13 +171,13 @@ impl ReadonlyUri {
         self._port_num as u32
     }
 
-    pub fn parse(&mut self) {
+    fn _parse(&mut self) {
         if self._parsed {
             return;
         }
         self._parsed = true;
 
-        let mut tmp = unsafe { &*self._raw };
+        let mut tmp = (unsafe { &*self._raw }).trim();
 
         if tmp.is_empty() {
             return;
@@ -154,8 +186,8 @@ impl ReadonlyUri {
         match tmp.find("://") {
             None => {}
             Some(idx) => {
+                self._scheme = (&(tmp[0..idx])).trim();
                 tmp = &(tmp[idx + 3..]);
-                self._scheme = &(tmp[0..idx]);
             }
         }
 
@@ -166,13 +198,13 @@ impl ReadonlyUri {
         match tmp.find('@') {
             None => {}
             Some(idx) => {
-                tmp = &(tmp[idx + 1..]);
                 let authinfo = &tmp[..idx];
+                tmp = &(tmp[idx + 1..]);
                 match authinfo.find(':') {
                     None => {}
                     Some(idx) => {
-                        self._username = &(authinfo[..idx]);
-                        self._password = &(authinfo[idx + 1..]);
+                        self._username = (&(authinfo[..idx])).trim();
+                        self._password = (&(authinfo[idx + 1..])).trim();
                     }
                 }
             }
@@ -185,7 +217,7 @@ impl ReadonlyUri {
         match tmp.rfind('#') {
             None => {}
             Some(idx) => {
-                self._fragment = &(tmp[idx..]);
+                self._fragment = (&(tmp[idx + 1..])).trim();
                 tmp = &(tmp[0..idx]);
             }
         }
@@ -197,7 +229,7 @@ impl ReadonlyUri {
         match tmp.rfind('?') {
             None => {}
             Some(idx) => {
-                self._raw_query = &(tmp[idx..]);
+                self._raw_query = (&(tmp[idx + 1..])).trim();
                 tmp = &(tmp[0..idx]);
             }
         }
@@ -209,7 +241,7 @@ impl ReadonlyUri {
         match tmp.find('/') {
             None => {}
             Some(idx) => {
-                self._path = &(tmp[idx..]);
+                self._path = (&(tmp[idx..])).trim();
                 tmp = &(tmp[0..idx])
             }
         }
@@ -223,8 +255,8 @@ impl ReadonlyUri {
                 self._host = tmp;
             }
             Some(idx) => {
-                self._host = &tmp[0..idx];
-                self._port = &tmp[idx + 1..];
+                self._host = (&tmp[0..idx]).trim();
+                self._port = (&tmp[idx + 1..]).trim();
             }
         }
     }
@@ -324,6 +356,30 @@ impl Uri {
 #[cfg(test)]
 mod tests {
     use crate::utils::{ReadonlyUri, Uri};
+
+    #[test]
+    fn parse() {
+        // std
+        let mut uri =
+            ReadonlyUri::parse("http://ztk:123456@httpd.local:8080/static/index/?hello=world#main");
+
+        assert_eq!(uri.scheme(), "http");
+        assert_eq!(uri.username(), "ztk");
+        assert_eq!(uri.password(), "123456");
+        assert_eq!(uri.host(), "httpd.local");
+        assert_eq!(uri.port(), 8080);
+        assert_eq!(uri.path(), "/static/index/");
+        assert_eq!(uri.rawquery(), "hello=world");
+        assert_eq!(uri.fragment(), "main");
+
+        println!("{:?}", ReadonlyUri::parse("ztk:123456@foo.com:80/"));
+
+        println!("{:?}", ReadonlyUri::parse(""));
+
+        println!("{:?}", ReadonlyUri::parse("/ABCD"));
+
+        println!("{:?}", ReadonlyUri::parse("ABCD"));
+    }
 
     #[test]
     fn safe_path() {
