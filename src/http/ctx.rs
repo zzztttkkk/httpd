@@ -2,13 +2,13 @@ use std::any::Any;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use super::wsimpl::WebSocketHandler;
 use crate::http::request::Request;
 use crate::http::response::Response;
-use crate::http::ws_handler::WebSocketHandler;
 
 pub enum Protocol {
     Nil,
-    Websocket(Arc<dyn WebSocketHandler>),
+    Websocket(Arc<dyn WebSocketHandler<>>),
     Http2,
 }
 

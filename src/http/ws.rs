@@ -7,7 +7,7 @@ use crate::config::Config;
 use crate::utils;
 
 use super::ctx::Context;
-use super::ws_handler::WebSocketHandler;
+use super::wsimpl::WebSocketHandler;
 
 pub async fn handshake(ctx: &mut Context) {
     if !ctx.request().method_is_get() {
@@ -15,7 +15,7 @@ pub async fn handshake(ctx: &mut Context) {
     }
 }
 
-pub async fn conn<RW: AsyncRead + AsyncWrite>(
+pub async fn conn<RW: AsyncRead + AsyncWrite + 'static>(
     stream: BufStream<RW>,
     ac: &'static AtomicI64,
     cfg: &'static Config,
