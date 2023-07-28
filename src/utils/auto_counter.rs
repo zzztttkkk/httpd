@@ -1,5 +1,4 @@
 use std::sync::atomic::{AtomicI64, Ordering};
-use std::sync::Arc;
 
 pub struct AutoCounter(&'static AtomicI64);
 

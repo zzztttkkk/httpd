@@ -30,7 +30,7 @@ impl<InStream: AsyncRead + Unpin, OutStream: AsyncWrite + Unpin> Connection<InSt
         loop {
             let mut _ctx = (ctx.lock()).await;
             buf.clear();
-            let read_status = _ctx.req.msg.readfrom(&mut reader, &mut buf).await;
+            let read_status = _ctx.req.msg.readfrom11(&mut reader, &mut buf).await;
             drop(_ctx);
             if read_status > 0 {
                 break;
@@ -38,9 +38,9 @@ impl<InStream: AsyncRead + Unpin, OutStream: AsyncWrite + Unpin> Connection<InSt
 
             handler.handle(ctx.clone()).await;
 
-            let mut _ctx = (ctx.as_ref().lock()).await;
+            let mut _ctx = (ctx.lock()).await;
             buf.clear();
-            _ctx.resp.msg.writeto(&mut writer, &mut buf).await;
+            _ctx.resp.msg.writeto11(&mut writer, &mut buf).await;
             break;
         }
     }

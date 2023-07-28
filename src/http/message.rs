@@ -18,7 +18,7 @@ impl Message {
         };
     }
 
-    pub(crate) async fn readfrom<T: AsyncBufReadExt + Unpin>(
+    pub(crate) async fn readfrom11<T: AsyncBufReadExt + Unpin>(
         &mut self,
         stream: &mut T,
         buf: &mut Vec<u8>,
@@ -29,7 +29,7 @@ impl Message {
                 return 1;
             }
             if let Ok(method) = std::str::from_utf8(&buf[..rl - 1]) {
-                self.fl.0.push_str(method);
+                self.fl.0.push_str(method.to_ascii_uppercase().as_str());
             } else {
                 return 400;
             }
@@ -139,7 +139,13 @@ impl Message {
         return 0;
     }
 
-    pub(crate) async fn writeto<T: AsyncWriteExt>(&mut self, stream: &mut T, buf: &mut Vec<u8>) {}
+    pub(crate) async fn writeto11<T: AsyncWriteExt + Unpin>(
+        &mut self,
+        stream: &mut T,
+        buf: &mut Vec<u8>,
+    ) {
+        _ = stream.flush().await;
+    }
 }
 
 pub struct Request {
@@ -151,6 +157,26 @@ impl Request {
         return Self {
             msg: Message::new(),
         };
+    }
+
+    pub fn method(&self) -> &String {
+        return &self.msg.fl.0;
+    }
+
+    pub fn url(&self) -> &String {
+        return &self.msg.fl.1;
+    }
+
+    pub fn version(&self) -> &String {
+        return &self.msg.fl.2;
+    }
+
+    pub fn header(&self) -> &Header {
+        return &self.msg.header;
+    }
+
+    pub fn body(&self) -> &Option<BytesMut> {
+        return &self.msg.body;
     }
 }
 

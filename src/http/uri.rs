@@ -3,7 +3,7 @@ use std::fmt::{format, Formatter};
 
 use once_cell::sync::Lazy;
 
-use crate::utils::MultiValuesMap;
+use super::header::Header;
 
 /// UNSAFE!!!!!!!!!!!!!!!!!
 pub struct ReadonlyUri {
@@ -27,7 +27,7 @@ pub struct ReadonlyUri {
 unsafe impl Send for ReadonlyUri {}
 
 fn read_str_ptr(ptr: *const str) -> &'static str {
-    if (ptr.is_null()) {
+    if ptr.is_null() {
         return "";
     }
     unsafe { &*ptr }
@@ -269,7 +269,7 @@ pub struct Uri {
     pub host: String,
     pub port: u32,
     pub path: String,
-    pub query: Option<MultiValuesMap>,
+    pub query: Option<Header>,
 }
 
 static ENCODE_TABLE: Lazy<[bool; 128]> = Lazy::new(|| {
@@ -355,7 +355,7 @@ impl Uri {
 
 #[cfg(test)]
 mod tests {
-    use crate::utils::{ReadonlyUri, Uri};
+    use super::{ReadonlyUri, Uri};
 
     #[test]
     fn parse() {
