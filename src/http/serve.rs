@@ -14,18 +14,6 @@ use crate::{
     utils::{self, AutoCounter},
 };
 
-async fn is_alive(stream: &TcpStream) -> bool {
-    let mut tmp = [0; 1];
-    tokio::select! {
-        rr = stream.peek(&mut tmp) =>  {
-            return  rr.is_ok();
-        }
-        _ = tokio::time::sleep(Duration::from_millis(3)) => {
-            return false;
-        }
-    }
-}
-
 pub async fn serve(config: &'static Config) -> Result<(), Box<dyn std::error::Error>> {
     let addr = config.addr.clone();
     let listener = TcpListener::bind(&addr).await.unwrap();
@@ -79,10 +67,6 @@ pub async fn serve(config: &'static Config) -> Result<(), Box<dyn std::error::Er
                                         if(waitting_times >= config.socket.max_waiting_times){
                                             return;
                                         }
-                                    }
-
-                                    if(!(is_alive(&stream).await)){
-                                        return;
                                     }
                                 }
                             }
