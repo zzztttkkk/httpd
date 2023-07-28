@@ -1,5 +1,8 @@
+use std::cell::RefCell;
+use std::net::SocketAddr;
 use bytes::{BufMut, BytesMut};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
+use crate::utils;
 
 use super::header::Header;
 
@@ -55,7 +58,6 @@ impl Message {
                     let vs = self.fl.1.as_mut_vec();
                     vs.remove(vs.len() - 1);
                 }
-                println!("{}", self.fl.1);
             }
         } else {
             return 400;
@@ -107,6 +109,10 @@ impl Message {
 
         let content_length_result = self.header.get_content_length();
         if let Ok(mut size) = content_length_result {
+            if size == 0 {
+                return 0;
+            }
+
             buf.resize(buf.capacity(), 0);
 
             loop {
@@ -122,7 +128,7 @@ impl Message {
                     }
 
                     if self.body.is_none() {
-                        self.body = Some(bytes::BytesMut::new());
+                        self.body = Some(BytesMut::new());
                     }
                     let bref = self.body.as_mut().unwrap();
                     bref.put_slice(&buf[..rl]);
@@ -143,8 +149,54 @@ impl Message {
         &mut self,
         stream: &mut T,
         buf: &mut Vec<u8>,
-    ) {
-        _ = stream.flush().await;
+    ) -> std::io::Result<()> {
+        if self.fl.0.is_empty() {
+            _ = stream.write("HTTP/1.1".as_bytes()).await;
+        } else {
+            _ = stream.write(self.fl.0.as_bytes()).await;
+        }
+        _ = stream.write(" ".as_bytes()).await;
+
+        if self.fl.1.is_empty() || self.fl.2.is_empty() {
+            _ = stream.write("200".as_bytes()).await;
+            _ = stream.write(" ".as_bytes()).await;
+            _ = stream.write("OK".as_bytes()).await;
+            _ = stream.write("\r\n".as_bytes()).await;
+        } else {
+            _ = stream.write(self.fl.1.as_bytes()).await;
+            _ = stream.write(" ".as_bytes()).await;
+            _ = stream.write(self.fl.2.as_bytes()).await;
+            _ = stream.write("\r\n".as_bytes()).await;
+        }
+
+
+        let mut body_length: usize = 0;
+        if let Some(body) = self.body.as_ref() {
+            body_length = body.len()
+        }
+
+        self.header.set("content-length", body_length.to_string().as_str());
+        self.header.set("server", "httpd.rs");
+        self.header.set(
+            "date",
+            utils::time::utc().format(
+                utils::time::DEFAULT_HTTP_HEADER_TIME_LAYOUT
+            ).to_string().as_str(),
+        );
+
+        buf.clear();
+        self.header.each(|k, vs| {
+            for v in vs {
+                _ = buf.extend_from_slice(format!("{}: {}\r\n", k, v).as_bytes());
+            }
+        });
+        _ = stream.write(buf.as_slice()).await;
+        _ = stream.write("\r\n".as_bytes()).await;
+
+        if let Some(body) = self.body.as_ref() {
+            _ = stream.write(body).await;
+        }
+        return stream.flush().await;
     }
 }
 
@@ -182,26 +234,39 @@ impl Request {
 
 pub struct Response {
     pub(crate) msg: Message,
+
+    _status_code: RefCell<Option<u32>>,
 }
 
 impl Response {
     pub(crate) fn new() -> Self {
         return Self {
             msg: Message::new(),
+            _status_code: RefCell::new(None),
         };
     }
 }
 
 pub struct Context {
+    _remote_addr: SocketAddr,
     pub(crate) req: Request,
     pub(crate) resp: Response,
 }
 
 impl Context {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(addr: SocketAddr) -> Self {
         return Self {
+            _remote_addr: addr,
             req: Request::new(),
             resp: Response::new(),
         };
+    }
+
+    pub fn remote_addr(&self) -> &SocketAddr {
+        return &self._remote_addr;
+    }
+
+    pub fn keep_alive(&self) -> bool {
+        return false;
     }
 }

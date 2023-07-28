@@ -31,12 +31,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Box::pin(async move {
             let ctx = ctx.lock().await;
 
-            println!("{:?}", ctx.req.msg.header.get_content_length());
-
             println!(
-                "----ctx: {:p} thread: {:?}",
+                "thread: {:?} ctx: {:p} remote {}",
+                thread::current().id(),
                 &ctx.req,
-                thread::current().id()
+                ctx.remote_addr(),
             );
             return ();
         });

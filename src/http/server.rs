@@ -32,21 +32,21 @@ impl Server {
 
         println!(
             "[{}] httpd listening @ {} (Tls:{}), Pid: {}",
-            utils::Time::currentstr(),
+            utils::time::currentstr(None),
             &addr,
             self.tls_acceptor.is_some(),
             std::process::id()
         );
     }
 
-    pub async fn serve<T: Handler+'static>(&mut self, handler: Arc<T>) {
+    pub async fn serve<T: Handler + 'static>(&mut self, handler: Arc<T>) {
         let listener = self.listener.as_ref().unwrap();
 
         loop {
             tokio::select! {
                 accept_result = listener.accept() => {
                     match accept_result {
-                        Ok((stream, _)) => {
+                        Ok((stream, addr)) => {
                             let tlsaopt = self.tls_acceptor.clone();
                             let handler = handler.clone();
 
@@ -55,14 +55,13 @@ impl Server {
                                     Some(tlsa)=>{
                                         if let Ok(stream) = tlsa.accept(stream).await {
                                             let (ins, outs) = tokio::io::split(stream);
-                                            let mut conn = Connection::new(ins, outs);
+                                            let mut conn = Connection::new(addr, ins, outs);
                                             conn.handle(handler).await;
                                         }
                                     },
                                     None=>{
                                         let (ins, outs) = stream.into_split();
-
-                                        let mut conn = Connection::new(ins, outs);
+                                        let mut conn = Connection::new(addr, ins, outs);
                                         conn.handle(handler).await;
                                     }
                                 }
@@ -74,7 +73,7 @@ impl Server {
                     }
                 },
                 _ = tokio::signal::ctrl_c() => {
-                    println!("[{}] httpd is preparing to shutdown", utils::Time::currentstr());
+                    println!("[{}] httpd is preparing to shutdown", utils::time::currentstr(None));
                     return ;
                 }
             }

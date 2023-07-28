@@ -128,6 +128,14 @@ impl Header {
         drop(cl_ref);
         self.set("content-length", size.to_string().as_str());
     }
+
+    pub fn each<F: FnMut(&String, &Vec<String>) -> ()>(&self, mut visitor: F) {
+        if let Some(map) = self.val.as_ref() {
+            for (k, v) in map {
+                visitor(k, v);
+            }
+        }
+    }
 }
 
 #[cfg(test)]

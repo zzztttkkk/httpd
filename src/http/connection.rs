@@ -1,3 +1,4 @@
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 use tokio::{
@@ -8,20 +9,22 @@ use tokio::{
 use super::{handler::Handler, message::Context};
 
 pub struct Connection<InStream: AsyncRead + Unpin, OutStream: AsyncWrite + Unpin> {
+    remote_addr: SocketAddr,
     istream: InStream,
     ostream: OutStream,
 }
 
 impl<InStream: AsyncRead + Unpin, OutStream: AsyncWrite + Unpin> Connection<InStream, OutStream> {
-    pub(crate) fn new(ins: InStream, outs: OutStream) -> Self {
+    pub(crate) fn new(addr: SocketAddr, ins: InStream, outs: OutStream) -> Self {
         return Self {
+            remote_addr: addr,
             istream: ins,
             ostream: outs,
         };
     }
 
     pub(crate) async fn handle<T: Handler>(&mut self, handler: Arc<T>) {
-        let ctx = Arc::new(Mutex::new(Context::new()));
+        let ctx = Arc::new(Mutex::new(Context::new(self.remote_addr)));
 
         let mut reader = tokio::io::BufReader::new(&mut self.istream);
         let mut writer = tokio::io::BufWriter::new(&mut self.ostream);
@@ -40,8 +43,13 @@ impl<InStream: AsyncRead + Unpin, OutStream: AsyncWrite + Unpin> Connection<InSt
 
             let mut _ctx = (ctx.lock()).await;
             buf.clear();
-            _ctx.resp.msg.writeto11(&mut writer, &mut buf).await;
-            break;
+            if let Err(_) = _ctx.resp.msg.writeto11(&mut writer, &mut buf).await {
+                break;
+            }
+
+            if !_ctx.keep_alive() {
+                break;
+            }
         }
     }
 }
