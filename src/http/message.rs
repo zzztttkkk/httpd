@@ -1,623 +1,181 @@
-use std::fmt::Formatter;
-use std::io::{Read, Write};
+use bytes::{BufMut, BytesMut};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 
-use bytebuffer::ByteBuffer;
-use flate2::Compression;
-use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWriteExt};
+use super::header::Header;
 
-use crate::config::Config;
-use crate::http::compress::{CompressType, CompressWriter, Deflate, Gzip};
-use crate::http::headers::Headers;
-
-pub struct ByteBufferWrapper(*mut Option<ByteBuffer>);
-
-unsafe impl Send for ByteBufferWrapper {}
-
-impl ByteBufferWrapper {
-    #[inline(always)]
-    fn bufref(&mut self) -> &mut ByteBuffer {
-        unsafe { self.0.as_mut().unwrap().as_mut().unwrap() }
-    }
-}
-
-impl Read for ByteBufferWrapper {
-    #[inline(always)]
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        self.bufref().read(buf)
-    }
-}
-
-impl Write for ByteBufferWrapper {
-    #[inline(always)]
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.bufref().write(buf)
-    }
-
-    #[inline(always)]
-    fn flush(&mut self) -> std::io::Result<()> {
-        self.bufref().flush()
-    }
-}
-
-pub struct BodyBuf {
-    raw: Option<ByteBuffer>,
-    decoder: Option<Box<dyn Read + Send>>,
-    encoder: Option<Box<dyn CompressWriter + Send>>,
-    _encoder_finished: bool,
-}
-
-impl BodyBuf {
-    #[inline(always)]
-    pub fn new(buf: Option<ByteBuffer>) -> Self {
-        Self {
-            raw: buf,
-            decoder: None,
-            encoder: None,
-            _encoder_finished: false,
-        }
-    }
-
-    #[inline]
-    pub fn writeraw(&mut self, buf: &[u8]) {
-        ByteBuffer::write(self.raw.as_mut().unwrap(), buf).unwrap();
-    }
-
-    pub(crate) fn clear(&mut self) {
-        if self.decoder.is_some() {
-            self.decoder = None;
-        }
-
-        if self.encoder.is_some() {
-            if !self._encoder_finished {
-                let _ = self.finishcompress();
-            }
-            self.encoder = None;
-            self._encoder_finished = false;
-        }
-
-        if let Some(buf) = &mut self.raw {
-            buf.clear();
-        }
-    }
-
-    #[inline(always)]
-    pub fn decompress(&mut self, ct: CompressType) {
-        match ct {
-            CompressType::Gzip => {
-                self.decoder = Some(Box::new(flate2::read::GzDecoder::new(ByteBufferWrapper(
-                    &mut self.raw,
-                ))));
-            }
-            CompressType::Deflate => {
-                self.decoder = Some(Box::new(flate2::read::DeflateDecoder::new(
-                    ByteBufferWrapper(&mut self.raw),
-                )));
-            }
-        }
-    }
-
-    #[inline(always)]
-    pub fn begincompress(&mut self, ct: CompressType, level: flate2::Compression) {
-        match ct {
-            CompressType::Gzip => {
-                self.encoder = Some(Box::new(Gzip::with_level(
-                    ByteBufferWrapper(&mut self.raw),
-                    level,
-                )));
-            }
-            CompressType::Deflate => {
-                self.encoder = Some(Box::new(Deflate::with_level(
-                    ByteBufferWrapper(&mut self.raw),
-                    level,
-                )));
-            }
-        }
-    }
-
-    #[inline(always)]
-    pub fn finishcompress(&mut self) -> std::io::Result<()> {
-        if self._encoder_finished {
-            return Ok(());
-        }
-        self._encoder_finished = true;
-
-        match &mut self.encoder {
-            None => Ok(()),
-            Some(encoder) => encoder.finish(),
-        }
-    }
-
-    #[inline]
-    pub fn raw(&self) -> Option<&ByteBuffer> {
-        self.raw.as_ref()
-    }
-}
-
-impl Read for BodyBuf {
-    #[inline(always)]
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        match &mut self.decoder {
-            None => self.raw.as_mut().unwrap().read(buf),
-            Some(decoder) => decoder.read(buf),
-        }
-    }
-}
-
-impl Write for BodyBuf {
-    #[inline(always)]
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        match &mut self.encoder {
-            None => self.raw.as_mut().unwrap().write(buf),
-            Some(encoder) => encoder.write(buf),
-        }
-    }
-
-    #[inline(always)]
-    fn flush(&mut self) -> std::io::Result<()> {
-        match &mut self.encoder {
-            None => self.raw.as_mut().unwrap().flush(),
-            Some(encoder) => encoder.flush(),
-        }
-    }
-}
-
-impl std::fmt::Debug for BodyBuf {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "BodyBuf{{").unwrap();
-        match &self.raw {
-            None => {
-                write!(f, " len:0").unwrap();
-            }
-            Some(v) => {
-                write!(
-                    f,
-                    " len:{}, rpos:{}, wpos:{}",
-                    v.len(),
-                    v.get_rpos(),
-                    v.get_wpos()
-                )
-                .unwrap();
-            }
-        }
-
-        if self.decoder.is_some() {
-            write!(f, ", In Decompressing").unwrap();
-        }
-
-        if self.encoder.is_some() {
-            write!(f, ", In Compressing").unwrap();
-        }
-
-        write!(f, "}}")
-    }
-}
-
-impl Drop for BodyBuf {
-    fn drop(&mut self) {
-        let _ = self.finishcompress();
-    }
-}
-
-#[derive(Default)]
-pub struct Range {
-    pub begin: u64,
-    pub length: u64,
-}
-
-#[derive(Default)]
 pub struct Message {
-    pub(crate) f0: String,
-    pub(crate) f1: String,
-    pub(crate) f2: String,
-    pub(crate) headers: Headers,
-    pub(crate) bodybuf: Option<BodyBuf>,
-
-    pub(crate) output_compress_type: Option<CompressType>,
-    pub(crate) output_readobj: Option<Box<dyn AsyncRead + Send>>,
-    pub(crate) output_ranges: Option<Vec<Range>>,
-    pub(crate) output_content_type: String,
+    pub fl: (String, String, String),
+    pub header: Header,
+    pub body: Option<BytesMut>,
 }
-
-#[derive(Debug, Clone, Copy)]
-enum ReadStatus {
-    None,
-    Headers,
-    Body,
-    Ok,
-}
-
-pub static ERR_IN_COMING_BODY_TOO_LATGE: u32 = 413;
-pub static ERR_FIRST_LINE_TOO_LARGE: u32 = 414;
-pub static ERR_NON_ASCII_IN_FIRST_LINE: u32 = 400;
-pub static ERR_HEADER_LINE_TOOL_LARGE: u32 = 431;
-pub static ERR_HEADERS_COUNT_TOO_MANY: u32 = 431;
-
-pub static ERR_BAD_STREAM: u32 = 0;
-pub static ERR_NON_ASCII_IN_HEADER_KEY: u32 = 2;
-pub static ERR_BAD_PROTOCOL: u32 = 3;
-pub static ERR_MAYBE_HTTP2: u32 = 99;
 
 impl Message {
     pub(crate) fn new() -> Self {
-        Default::default()
+        return Self {
+            fl: (String::new(), String::new(), String::new()),
+            header: Header::new(),
+            body: None,
+        };
     }
 
-    pub(crate) fn clear(&mut self) {
-        self.f0.clear();
-        self.f1.clear();
-        self.f2.clear();
-        self.headers.clear();
-        if let Some(body) = &mut self.bodybuf {
-            body.clear();
+    pub(crate) async fn readfrom<T: AsyncBufReadExt + Unpin>(
+        &mut self,
+        stream: &mut T,
+        buf: &mut Vec<u8>,
+    ) -> u32 {
+        self.fl.0.clear();
+        if let Ok(rl) = stream.take(30).read_until(b' ', buf).await {
+            if rl < 2 {
+                return 1;
+            }
+            if let Ok(method) = std::str::from_utf8(&buf[..rl - 1]) {
+                self.fl.0.push_str(method);
+            } else {
+                return 400;
+            }
+        } else {
+            return 400;
         }
-    }
 
-    pub(crate) async fn from11<'a, R: AsyncBufReadExt + Unpin>(
-        reader: &'a mut R,
-        buf: &'a mut String,
-        cfg: &'static Config,
-    ) -> Result<Box<Self>, u32> {
-        buf.clear();
-        match reader
-            .take(cfg.http.max_first_line_size.u64())
-            .read_until('\n' as u8, unsafe { buf.as_mut_vec() })
+        // todo on fl.0
+
+        self.fl.1.clear();
+        if let Ok(rl) = stream
+            .take(64 * 1024)
+            .read_until(b' ', unsafe { self.fl.1.as_mut_vec() })
             .await
         {
-            Ok(line_size) => {
-                if (line_size <= 2) {
-                    return Err(ERR_BAD_STREAM);
-                }
-                if line_size >= cfg.http.max_first_line_size.usize() {
-                    return Err(ERR_FIRST_LINE_TOO_LARGE);
-                }
+            if rl < 1 {
+                return 1;
             }
-            Err(_) => return Err(ERR_BAD_STREAM),
+            if rl == 1 {
+                self.fl.1 = "/".to_string();
+            } else {
+                unsafe {
+                    let vs = self.fl.1.as_mut_vec();
+                    vs.remove(vs.len() - 1);
+                }
+                println!("{}", self.fl.1);
+            }
+        } else {
+            return 400;
         }
 
-        let mut status = ReadStatus::None;
-        let mut msg = Box::new(Message::new());
+        // todo on fl.1
 
-        let mut body_remains: i64 = 0;
-        let mut is_chunked = false;
-        let mut header_count = 0;
+        self.fl.2.clear();
+        buf.clear();
+        if let Ok(rl) = stream.take(30).read_until(b'\n', buf).await {
+            if rl < 2 {
+                return 1;
+            }
+            if let Ok(version) = std::str::from_utf8(&buf[..rl - 1]) {
+                self.fl.2.push_str(version.trim_end());
+            } else {
+                return 400;
+            }
+        } else {
+            return 400;
+        }
+
+        // todo on fl.2
 
         loop {
-            match status {
-                ReadStatus::None => {
-                    if buf.starts_with("PRI * HTTP/2.0") {
-                        return Err(ERR_MAYBE_HTTP2);
-                    }
-
-                    let mut fls = 0;
-                    for b in buf.bytes() {
-                        if b > 127 {
-                            return Err(ERR_NON_ASCII_IN_FIRST_LINE);
-                        }
-
-                        match fls {
-                            0 => {
-                                if b == ' ' as u8 {
-                                    fls += 1;
-                                    continue;
-                                }
-
-                                unsafe { msg.f0.as_mut_vec().push(b.to_ascii_uppercase()) };
-                            }
-                            1 => {
-                                if b == ' ' as u8 {
-                                    fls += 1;
-                                    continue;
-                                }
-                                unsafe { msg.f1.as_mut_vec().push(b) };
-                            }
-                            2 => {
-                                if b == '\r' as u8 {
-                                    if (!msg.f2.starts_with("HTTP/") || msg.f2.len() < 6) {
-                                        return Err(ERR_BAD_PROTOCOL);
-                                    }
-                                    let major = msg.f2.as_bytes()[5];
-                                    if (major != '0' as u8 || major != '1' as u8) {
-                                        return Err(ERR_BAD_PROTOCOL);
-                                    }
-                                    break;
-                                }
-                                unsafe { msg.f2.as_mut_vec().push(b.to_ascii_uppercase()) };
-                            }
-                            _ => {
-                                break;
-                            }
-                        }
-                    }
-
-                    status = ReadStatus::Headers;
+            buf.clear();
+            if let Ok(rl) = stream.take(64 * 1024).read_until(b'\n', buf).await {
+                if rl < 1 {
+                    return 1;
                 }
-                ReadStatus::Headers => {
-                    buf.clear();
-                    match reader
-                        .take(cfg.http.max_header_line_size.u64())
-                        .read_until('\n' as u8, unsafe { buf.as_mut_vec() })
-                        .await
-                    {
-                        Ok(line_size) => {
-                            if line_size < 2 {
-                                return Err(ERR_BAD_STREAM);
-                            }
-
-                            if line_size == 2 {
-                                if msg.headers.ischunked() {
-                                    is_chunked = true;
-                                    msg.bodybuf = Some(BodyBuf::new(Some(ByteBuffer::new())));
-                                } else {
-                                    let cl = msg.headers.content_length();
-                                    if cl > 0 {
-                                        if cfg.http.max_incoming_body_size.usize() > 0
-                                            && cl > cfg.http.max_incoming_body_size.usize()
-                                        {
-                                            return Err(ERR_IN_COMING_BODY_TOO_LATGE);
-                                        }
-
-                                        body_remains = cl as i64;
-                                        let mut bbuf = ByteBuffer::new();
-                                        bbuf.resize(body_remains as usize);
-                                        msg.bodybuf = Some(BodyBuf::new(Some(bbuf)));
-
-                                        unsafe {
-                                            let vec = buf.as_mut_vec();
-                                            vec.resize(vec.capacity(), 0);
-                                        }
-                                    }
-                                }
-
-                                if let Some(ct) = msg.headers.content_encoding() {
-                                    msg.bodybuf.as_mut().unwrap().decompress(ct);
-                                }
-
-                                status = ReadStatus::Body;
-                                continue;
-                            }
-
-                            if line_size >= cfg.http.max_header_line_size.usize() {
-                                return Err(ERR_HEADER_LINE_TOOL_LARGE);
-                            }
-
-                            if header_count > cfg.http.max_header_count {
-                                return Err(ERR_HEADERS_COUNT_TOO_MANY);
-                            }
-
-                            let mut parts = buf.splitn(2, ':');
-                            let key = match parts.next() {
-                                None => {
-                                    return Err(ERR_BAD_STREAM);
-                                }
-                                Some(v) => v,
-                            };
-
-                            if !key.is_ascii() {
-                                return Err(ERR_NON_ASCII_IN_HEADER_KEY);
-                            }
-
-                            match parts.next() {
-                                None => {
-                                    return Err(ERR_BAD_STREAM);
-                                }
-                                Some(v) => {
-                                    msg.headers.append(key.trim(), v.trim());
-                                    header_count += 1;
-                                }
-                            }
-                        }
-                        Err(_) => {
-                            return Err(ERR_BAD_STREAM);
-                        }
-                    }
+                let line = unsafe { std::str::from_utf8_unchecked(&buf[..rl - 1]) }.trim_end();
+                if line.is_empty() {
+                    break;
                 }
-                ReadStatus::Body => {
-                    if is_chunked {
-                        loop {
-                            buf.clear();
-                            match reader.take(36).read_line(buf).await {
-                                Ok(line_size) => {
-                                    if line_size < 2 || line_size >= 36 {
-                                        return Err(ERR_BAD_STREAM);
-                                    }
 
-                                    if line_size == 2 {
-                                        status = ReadStatus::Ok;
-                                        break;
-                                    }
-
-                                    let mut remain_chunk_size =
-                                        match buf.as_str()[0..line_size - 2].parse::<usize>() {
-                                            Ok(v) => v,
-                                            Err(e) => {
-                                                return Err(ERR_BAD_STREAM);
-                                            }
-                                        };
-
-                                    unsafe {
-                                        let vec = buf.as_mut_vec();
-                                        vec.resize(vec.capacity(), 0);
-                                    }
-
-                                    let bytes: &mut [u8];
-                                    unsafe {
-                                        bytes = buf.as_bytes_mut();
-                                    }
-
-                                    loop {
-                                        match reader.read(bytes).await {
-                                            Ok(rbs) => {
-                                                if rbs < 1 {
-                                                    return Err(ERR_BAD_STREAM);
-                                                }
-
-                                                msg.bodybuf
-                                                    .as_mut()
-                                                    .unwrap()
-                                                    .writeraw(&bytes[0..rbs]);
-
-                                                if remain_chunk_size <= rbs {
-                                                    break;
-                                                }
-                                                remain_chunk_size -= rbs;
-                                            }
-                                            Err(e) => {
-                                                return Err(ERR_BAD_STREAM);
-                                            }
-                                        }
-                                    }
-
-                                    match reader.read_u8().await {
-                                        Ok(v) => {
-                                            if v != b'\r' {
-                                                return Err(ERR_BAD_STREAM);
-                                            }
-                                        }
-                                        Err(_) => {
-                                            return Err(ERR_BAD_STREAM);
-                                        }
-                                    }
-
-                                    match reader.read_u8().await {
-                                        Ok(v) => {
-                                            if v != b'\n' {
-                                                return Err(ERR_BAD_STREAM);
-                                            }
-                                        }
-                                        Err(_) => {
-                                            return Err(ERR_BAD_STREAM);
-                                        }
-                                    }
-                                }
-                                Err(_) => {
-                                    return Err(ERR_BAD_STREAM);
-                                }
-                            }
-                        }
-                    } else {
-                        if body_remains > 0 {
-                            let bytes: &mut [u8];
-                            unsafe {
-                                bytes = buf.as_bytes_mut();
-                            }
-                            match reader.read(bytes).await {
-                                Ok(s) => {
-                                    if s < 1 {
-                                        return Err(ERR_BAD_STREAM);
-                                    }
-                                    msg.bodybuf.as_mut().unwrap().writeraw(&bytes[0..s]);
-                                    body_remains -= s as i64;
-                                }
-                                Err(_) => {
-                                    return Err(ERR_BAD_STREAM);
-                                }
-                            };
-                        }
-
-                        if body_remains <= 0 {
-                            status = ReadStatus::Ok;
-                        }
-                    }
+                let mut split_iter = line.splitn(2, ':');
+                let key = split_iter.next().unwrap_or("");
+                if key.is_empty() {
+                    return 400;
                 }
-                ReadStatus::Ok => {
-                    return Ok(msg);
-                }
+                self.header
+                    .add(key, split_iter.next().unwrap_or("").trim_start());
+            } else {
+                return 400;
             }
         }
+
+        // todo check chunked transfer-encoding
+
+        let content_length_result = self.header.get_content_length();
+        if let Ok(mut size) = content_length_result {
+            buf.resize(buf.capacity(), 0);
+
+            loop {
+                let require_length: usize;
+                if size > buf.capacity() {
+                    require_length = buf.capacity();
+                } else {
+                    require_length = size;
+                }
+                if let Ok(rl) = stream.read_exact(&mut buf[..require_length]).await {
+                    if rl < 1 || rl > require_length {
+                        return 1;
+                    }
+
+                    if self.body.is_none() {
+                        self.body = Some(bytes::BytesMut::new());
+                    }
+                    let bref = self.body.as_mut().unwrap();
+                    bref.put_slice(&buf[..rl]);
+
+                    size -= rl;
+                    if size == 0 {
+                        break;
+                    }
+                }
+            }
+        } else {
+            return 400;
+        }
+        return 0;
     }
 
-    fn body_buf_size(&self) -> usize {
-        match &self.bodybuf {
-            None => 0,
-            Some(buf) => match &buf.raw {
-                None => 0,
-                Some(buf) => buf.len(),
-            },
-        }
-    }
+    pub(crate) async fn writeto<T: AsyncWriteExt>(&mut self, stream: &mut T, buf: &mut Vec<u8>) {}
+}
 
-    pub(crate) async fn to11<Writer: AsyncWriteExt + Unpin>(
-        &mut self,
-        writer: &mut Writer,
-    ) -> std::io::Result<()> {
-        (Writer::write(
-            writer,
-            format!("HTTP/1.1 {} {}\r\n", self.f1, self.f2).as_bytes(),
-        )
-        .await)?;
+pub struct Request {
+    pub(crate) msg: Message,
+}
 
-        let body_buf_size = self.body_buf_size();
-        if self.output_readobj.is_none() {
-            self.headers.set_content_length(body_buf_size);
-        } else if self.output_ranges.is_none() {
-        }
-
-        if let Some(map) = self.headers.map() {
-            for (key, vals) in map {
-                for val in vals {
-                    (Writer::write(writer, format!("{}: {}\r\n", key, val).as_bytes()).await)?;
-                }
-            }
-        }
-        (Writer::write(writer, "\r\n".as_bytes()).await)?;
-
-        match &mut self.output_readobj {
-            Some(readobj) => match self.output_ranges.as_ref() {
-                Some(ranges) => {
-                    todo!()
-                }
-                None => {
-                    todo!()
-                }
-            },
-            None => {
-                if body_buf_size > 0 {
-                    let buf = self.bodybuf.as_ref().unwrap().raw().unwrap();
-                    (Writer::write(writer, buf.as_bytes()).await)?;
-                }
-            }
-        }
-
-        Ok(())
+impl Request {
+    pub(crate) fn new() -> Self {
+        return Self {
+            msg: Message::new(),
+        };
     }
 }
 
-impl Write for Message {
-    #[inline(always)]
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        let mut init = false;
-        if self.bodybuf.is_none() {
-            self.bodybuf = Some(BodyBuf::new(Some(ByteBuffer::new())));
-            init = true;
-        }
+pub struct Response {
+    pub(crate) msg: Message,
+}
 
-        let body = self.bodybuf.as_mut().unwrap();
-        if init {
-            if let Some(ct) = self.output_compress_type {
-                body.begincompress(ct, Compression::default());
-                self.headers.set_content_encoding(ct);
-            }
-        }
-
-        body.write(buf)
+impl Response {
+    pub(crate) fn new() -> Self {
+        return Self {
+            msg: Message::new(),
+        };
     }
+}
 
-    #[inline]
-    fn flush(&mut self) -> std::io::Result<()> {
-        if self.bodybuf.is_none() {
-            return Ok(());
-        }
+pub struct Context {
+    pub(crate) req: Request,
+    pub(crate) resp: Response,
+}
 
-        let body = self.bodybuf.as_mut().unwrap();
-        let result = body.flush();
-        if self.output_compress_type.is_some() {
-            match body.finishcompress() {
-                Ok(_) => {}
-                Err(e) => {
-                    return Err(e);
-                }
-            };
-        }
-        result
+impl Context {
+    pub(crate) fn new() -> Self {
+        return Self {
+            req: Request::new(),
+            resp: Response::new(),
+        };
     }
 }

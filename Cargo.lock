@@ -258,6 +258,7 @@ name = "httpd"
 version = "0.0.1"
 dependencies = [
  "bytebuffer",
+ "bytes",
  "chrono",
  "clap",
  "flate2",

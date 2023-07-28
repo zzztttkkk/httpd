@@ -1,15 +1,11 @@
-#![allow(unused)]
+// #![allow(unused)]
 
-use std::sync::atomic::{AtomicI64, Ordering};
-use std::sync::Arc;
-use std::time::Duration;
+use std::{sync::Arc, thread};
 
 use clap::Parser;
-use tokio::net::{TcpListener, TcpStream};
+use http::handler::FuncHandler;
 
 use crate::config::{Args, Config};
-use crate::http::Handler;
-use crate::utils::AutoCounter;
 
 mod config;
 mod http;
@@ -26,11 +22,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config = Config::default();
     }
     config.autofix();
-    if (!args.addr.trim().is_empty()) {
+    if !args.addr.trim().is_empty() {
         config.addr = args.addr.trim().to_string();
     }
 
-    let config: &'static Config = unsafe { std::mem::transmute(&config) };
+    let handler = Arc::new(FuncHandler::new(Box::new(|ctx| {
+        let ctx = ctx.clone();
+        return Box::pin(async move {
+            let ctx = ctx.lock().await;
 
-    http::serve(&config).await
+            println!("{:?}", ctx.req.msg.header.get_content_length());
+
+            println!(
+                "----ctx: {:p} thread: {:?}",
+                &ctx.req,
+                thread::current().id()
+            );
+            return ();
+        });
+    })));
+
+    let mut server = http::server::Server::new(config.clone());
+
+    server.listen().await;
+    server.serve(handler).await;
+    return Ok(());
 }

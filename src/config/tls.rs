@@ -3,7 +3,7 @@ use std::{fs::File, io::BufReader, path::Path};
 use serde::Deserialize;
 use tokio_rustls::rustls::{Certificate, PrivateKey, ServerConfig};
 
-#[derive(Deserialize, Clone, Default)]
+#[derive(Deserialize, Clone, Default, Debug)]
 pub struct ConfigTLS {
     #[serde(default)]
     pub cert: String,

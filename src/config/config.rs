@@ -3,7 +3,7 @@ use serde::Deserialize;
 
 use super::{duration_in_mills::DurationInMills, size_in_bytes::SizeInBytes, tls::ConfigTLS};
 
-#[derive(Deserialize, Clone, Default)]
+#[derive(Deserialize, Clone, Default, Debug)]
 pub struct ConfigHttp11 {
     #[serde(default)]
     pub conn_idle_timeout: DurationInMills,
@@ -15,7 +15,7 @@ impl ConfigHttp11 {
     }
 }
 
-#[derive(Deserialize, Clone, Default)]
+#[derive(Deserialize, Clone, Default, Debug)]
 pub struct ConfigSocket {
     #[serde(default)]
     pub read_buf_cap: SizeInBytes,
@@ -47,7 +47,7 @@ impl ConfigSocket {
     }
 }
 
-#[derive(Deserialize, Clone, Default)]
+#[derive(Deserialize, Clone, Default, Debug)]
 pub struct ConfigHTTPMessage {
     #[serde(default)]
     pub max_incoming_body_size: SizeInBytes,
@@ -80,7 +80,7 @@ impl ConfigHTTPMessage {
     }
 }
 
-#[derive(Deserialize, Clone, Default)]
+#[derive(Deserialize, Clone, Default, Debug)]
 pub struct Config {
     #[serde(default)]
     pub addr: String,

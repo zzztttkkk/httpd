@@ -1,40 +1,28 @@
-use std::future::Future;
-use std::pin::Pin;
+use std::{future::Future, pin::Pin, sync::Arc};
 
-use crate::http::ctx::Context;
+use tokio::sync::Mutex;
 
-pub type FutureType<'a> = Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
+use super::message::Context;
+
+type HandlerFutureType = Pin<Box<dyn Future<Output = ()> + Send>>;
+type ContextType = Arc<Mutex<Context>>;
 
 pub trait Handler: Send + Sync {
-    fn handler<'a: 'b, 'b>(&self, ctx: &'a mut Context) -> FutureType<'b>;
+    fn handle(&self, ctx: ContextType) -> HandlerFutureType;
 }
 
-type HandlerFuncType = dyn (Fn(&mut Context) -> FutureType) + Send + Sync;
+type HandlerFuncType = dyn (Fn(ContextType) -> HandlerFutureType) + Send + Sync;
 
 pub struct FuncHandler(Box<HandlerFuncType>);
 
-impl Handler for FuncHandler {
-    fn handler<'a: 'b, 'b>(&self, ctx: &'a mut Context) -> FutureType<'b> {
-        (self.0)(ctx)
-    }
-}
-
 impl FuncHandler {
-    pub fn new(f: Box<HandlerFuncType>) -> Self {
-        FuncHandler(f)
+    pub fn new(func: Box<HandlerFuncType>) -> Self {
+        return Self(func);
     }
 }
 
-#[macro_export]
-macro_rules! func {
-    ($ctx:ident, $content:expr) => {
-        $crate::http::handler::FuncHandler::new(Box::new(move |$ctx| {
-            Box::pin(async move { $content })
-        }))
-    };
-    ($content:expr) => {
-        $crate::http::handler::FuncHandler::new(Box::new(move |_| {
-            Box::pin(async move { $content })
-        }))
-    };
+impl Handler for FuncHandler {
+    fn handle(&self, ctx: ContextType) -> HandlerFutureType {
+        return (self.0)(ctx);
+    }
 }
