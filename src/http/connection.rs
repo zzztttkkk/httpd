@@ -3,10 +3,10 @@ use std::sync::Arc;
 
 use tokio::{
     io::{AsyncRead, AsyncWrite},
-    sync::Mutex,
 };
+use crate::http::context::Context;
+use crate::http::handler::Handler;
 
-use super::{handler::Handler, message::Context};
 
 pub struct Connection<InStream: AsyncRead + Unpin, OutStream: AsyncWrite + Unpin> {
     remote_addr: SocketAddr,
@@ -23,31 +23,23 @@ impl<InStream: AsyncRead + Unpin, OutStream: AsyncWrite + Unpin> Connection<InSt
         };
     }
 
-    pub(crate) async fn handle<T: Handler>(&mut self, handler: Arc<T>) {
-        let ctx = Arc::new(Mutex::new(Context::new(self.remote_addr)));
+    pub(crate) async fn handle(&mut self, handler: Arc<dyn Handler>) {
+        let mut ctx = Context::new(self.remote_addr);
+        let ptr = ctx.ptr();
 
         let mut reader = tokio::io::BufReader::new(&mut self.istream);
         let mut writer = tokio::io::BufWriter::new(&mut self.ostream);
         let mut buf = Vec::<u8>::with_capacity(1024);
 
         loop {
-            let mut _ctx = (ctx.lock()).await;
-            buf.clear();
-            let read_status = _ctx.req.msg.readfrom11(&mut reader, &mut buf).await;
-            drop(_ctx);
+            let read_status = ctx.request.readfrom11(&mut reader, &mut buf).await;
             if read_status > 0 {
                 break;
             }
 
-            handler.handle(ctx.clone()).await;
+            handler.handle(ptr).await;
 
-            let mut _ctx = (ctx.lock()).await;
-            buf.clear();
-            if let Err(_) = _ctx.resp.msg.writeto11(&mut writer, &mut buf).await {
-                break;
-            }
-
-            if !_ctx.keep_alive() {
+            if let Err(_) = ctx.response.writeto11(&mut writer, &mut buf).await {
                 break;
             }
         }

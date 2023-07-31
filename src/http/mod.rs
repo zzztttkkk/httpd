@@ -1,7 +1,8 @@
-mod connection;
+mod message;
+mod header;
+mod request;
+mod response;
+pub mod context;
 pub mod handler;
-pub mod header;
-pub mod message;
-mod mux;
+mod connection;
 pub mod server;
-mod uri;

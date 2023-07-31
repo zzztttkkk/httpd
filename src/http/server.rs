@@ -39,8 +39,9 @@ impl Server {
         );
     }
 
-    pub async fn serve<T: Handler + 'static>(&mut self, handler: Arc<T>) {
+    pub async fn serve(&mut self, handler: impl Handler) {
         let listener = self.listener.as_ref().unwrap();
+        let handler = Arc::new(handler);
 
         loop {
             tokio::select! {

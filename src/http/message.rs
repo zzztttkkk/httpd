@@ -1,16 +1,14 @@
-use crate::utils;
 use bytes::{BufMut, BytesMut};
-use std::cell::RefCell;
-use std::net::SocketAddr;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
-
-use super::header::Header;
+use crate::http::header::Header;
+use crate::utils;
 
 pub struct Message {
-    pub fl: (String, String, String),
-    pub header: Header,
-    pub body: Option<BytesMut>,
+    pub(crate) fl: (String, String, String),
+    pub(crate) header: Header,
+    pub(crate) body: Option<BytesMut>,
 }
+
 
 impl Message {
     pub(crate) fn new() -> Self {
@@ -25,6 +23,7 @@ impl Message {
         &mut self,
         stream: &mut T,
         buf: &mut Vec<u8>,
+        for_request: bool,
     ) -> u32 {
         self.fl.0.clear();
         if let Ok(rl) = stream.take(30).read_until(b' ', buf).await {
@@ -149,6 +148,7 @@ impl Message {
         &mut self,
         stream: &mut T,
         buf: &mut Vec<u8>,
+        is_request: bool,
     ) -> std::io::Result<()> {
         if self.fl.0.is_empty() {
             _ = stream.write("HTTP/1.1".as_bytes()).await;
@@ -198,80 +198,5 @@ impl Message {
             _ = stream.write(body).await;
         }
         return stream.flush().await;
-    }
-}
-
-pub struct Request {
-    pub(crate) msg: Message,
-}
-
-impl Request {
-    pub(crate) fn new() -> Self {
-        return Self {
-            msg: Message::new(),
-        };
-    }
-
-    pub fn method(&self) -> &String {
-        return &self.msg.fl.0;
-    }
-
-    pub fn url(&self) -> &String {
-        return &self.msg.fl.1;
-    }
-
-    pub fn path(&self) -> &String {
-        return &self.msg.fl.1;
-    }
-
-    pub fn version(&self) -> &String {
-        return &self.msg.fl.2;
-    }
-
-    pub fn header(&self) -> &Header {
-        return &self.msg.header;
-    }
-
-    pub fn body(&self) -> &Option<BytesMut> {
-        return &self.msg.body;
-    }
-}
-
-pub struct Response {
-    pub(crate) msg: Message,
-
-    _status_code: RefCell<Option<u32>>,
-}
-
-impl Response {
-    pub(crate) fn new() -> Self {
-        return Self {
-            msg: Message::new(),
-            _status_code: RefCell::new(None),
-        };
-    }
-}
-
-pub struct Context {
-    _remote_addr: SocketAddr,
-    pub(crate) req: Request,
-    pub(crate) resp: Response,
-}
-
-impl Context {
-    pub(crate) fn new(addr: SocketAddr) -> Self {
-        return Self {
-            _remote_addr: addr,
-            req: Request::new(),
-            resp: Response::new(),
-        };
-    }
-
-    pub fn remote_addr(&self) -> &SocketAddr {
-        return &self._remote_addr;
-    }
-
-    pub fn keep_alive(&self) -> bool {
-        return false;
     }
 }

@@ -1,28 +1,35 @@
-use std::{future::Future, pin::Pin, sync::Arc};
+use std::future::Future;
+use async_trait::async_trait;
+use crate::http::context::{Context, ContextPtr};
 
-use tokio::sync::Mutex;
+pub type ContextType = ContextPtr;
 
-use super::message::Context;
-
-pub type HandlerFutureType = Pin<Box<dyn Future<Output = ()> + Send>>;
-pub type ContextType = Arc<Mutex<Context>>;
-
-pub trait Handler: Send + Sync {
-    fn handle(&self, ctx: ContextType) -> HandlerFutureType;
+#[async_trait]
+pub trait Handler: Send + Sync + 'static {
+    async fn handle(&self, ctx: ContextType);
 }
 
-type HandlerFuncType = dyn (Fn(ContextType) -> HandlerFutureType) + Send + Sync;
 
-pub struct FuncHandler(Box<HandlerFuncType>);
-
-impl FuncHandler {
-    pub fn new(func: Box<HandlerFuncType>) -> Self {
-        return Self(func);
+#[async_trait]
+impl<F, Fut> Handler for F where
+    F: Send + Sync + 'static + Fn(ContextType) -> Fut,
+    Fut: Future<Output=()> + Send + 'static
+{
+    async fn handle(&self, ctx: ContextType) {
+        (self)(ctx).await;
     }
 }
 
-impl Handler for FuncHandler {
-    fn handle(&self, ctx: ContextType) -> HandlerFutureType {
-        return (self.0)(ctx);
+
+#[cfg(test)]
+mod tests {
+    use crate::http::context::ContextPtr;
+    use crate::http::handler::{ContextType, Handler};
+
+    fn add_handler(h: impl Handler) {}
+
+    #[test]
+    fn test() {
+        add_handler(|ctx: ContextType| async move {});
     }
 }

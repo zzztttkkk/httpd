@@ -1,11 +1,11 @@
 // #![allow(unused)]
 
-use std::{sync::Arc, thread};
-
+use std::ops::DerefMut;
 use clap::Parser;
-use http::handler::FuncHandler;
 
 use crate::config::{Args, Config};
+use crate::http::context::{Context, ContextPtr};
+use crate::http::server::Server;
 
 mod config;
 mod http;
@@ -26,23 +26,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.addr = args.addr.trim().to_string();
     }
 
-    let handler = Arc::new(FuncHandler::new(Box::new(|ctx| {
-        let ctx = ctx.clone();
-        return Box::pin(async move {
-            let ctx = ctx.lock().await;
-
-            println!(
-                "thread: {:?} ctx: {:p} remote {}",
-                thread::current().id(),
-                &ctx.req,
-                ctx.remote_addr(),
-            );
-            return ();
-        });
-    })));
-
-    let mut server = http::server::Server::new(config.clone());
-
+    let handler = |mut ctx: ContextPtr| async move {
+        println!("{} {}", ctx.request.method(), ctx.remote_addr());
+        let _ = ctx.sync().await;
+        ctx.request.method();
+    };
+    let mut server = Server::new(config.clone());
     server.listen().await;
     server.serve(handler).await;
     return Ok(());
