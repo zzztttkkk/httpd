@@ -1,10 +1,9 @@
 // #![allow(unused)]
 
-use std::ops::DerefMut;
 use clap::Parser;
 
 use crate::config::{Args, Config};
-use crate::http::context::{Context, ContextPtr};
+use crate::http::context::{ContextPtr};
 use crate::http::server::Server;
 
 mod config;

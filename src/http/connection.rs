@@ -25,7 +25,7 @@ impl<InStream: AsyncRead + Unpin, OutStream: AsyncWrite + Unpin> Connection<InSt
 
     pub(crate) async fn handle(&mut self, handler: Arc<dyn Handler>) {
         let mut ctx = Context::new(self.remote_addr);
-        let ptr = ctx.ptr();
+        let ptr = unsafe { ctx.ptr() };
 
         let mut reader = tokio::io::BufReader::new(&mut self.istream);
         let mut writer = tokio::io::BufWriter::new(&mut self.ostream);

@@ -25,8 +25,8 @@ impl Context {
         };
     }
 
-    pub fn ptr(&self) -> ContextPtr {
-        return ContextPtr(unsafe { std::mem::transmute(self) });
+    pub unsafe fn ptr(&self) -> ContextPtr {
+        return ContextPtr(std::mem::transmute(self));
     }
 
     pub async fn sync(&mut self) -> MutexGuard<()> {
@@ -38,6 +38,7 @@ impl Context {
     }
 }
 
+// i think Arc<Mutex<Context>> is too expensive.
 #[derive(Copy, Clone)]
 pub struct ContextPtr(usize);
 
