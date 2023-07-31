@@ -1,8 +1,8 @@
+use crate::utils;
+use bytes::{BufMut, BytesMut};
 use std::cell::RefCell;
 use std::net::SocketAddr;
-use bytes::{BufMut, BytesMut};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
-use crate::utils;
 
 use super::header::Header;
 
@@ -169,19 +169,20 @@ impl Message {
             _ = stream.write("\r\n".as_bytes()).await;
         }
 
-
         let mut body_length: usize = 0;
         if let Some(body) = self.body.as_ref() {
             body_length = body.len()
         }
 
-        self.header.set("content-length", body_length.to_string().as_str());
+        self.header
+            .set("content-length", body_length.to_string().as_str());
         self.header.set("server", "httpd.rs");
         self.header.set(
             "date",
-            utils::time::utc().format(
-                utils::time::DEFAULT_HTTP_HEADER_TIME_LAYOUT
-            ).to_string().as_str(),
+            utils::time::utc()
+                .format(utils::time::DEFAULT_HTTP_HEADER_TIME_LAYOUT)
+                .to_string()
+                .as_str(),
         );
 
         buf.clear();
@@ -216,6 +217,10 @@ impl Request {
     }
 
     pub fn url(&self) -> &String {
+        return &self.msg.fl.1;
+    }
+
+    pub fn path(&self) -> &String {
         return &self.msg.fl.1;
     }
 

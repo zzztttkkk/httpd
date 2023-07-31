@@ -4,8 +4,8 @@ use tokio::sync::Mutex;
 
 use super::message::Context;
 
-type HandlerFutureType = Pin<Box<dyn Future<Output = ()> + Send>>;
-type ContextType = Arc<Mutex<Context>>;
+pub type HandlerFutureType = Pin<Box<dyn Future<Output = ()> + Send>>;
+pub type ContextType = Arc<Mutex<Context>>;
 
 pub trait Handler: Send + Sync {
     fn handle(&self, ctx: ContextType) -> HandlerFutureType;
