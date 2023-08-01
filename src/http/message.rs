@@ -1,12 +1,14 @@
+use std::io::Write;
 use bytes::{BufMut, BytesMut};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
+use crate::http::body::{Body, CompressionType};
 use crate::http::header::Header;
 use crate::utils;
 
 pub struct Message {
     pub(crate) fl: (String, String, String),
     pub(crate) header: Header,
-    pub(crate) body: Option<BytesMut>,
+    pub(crate) body: Option<Body>,
 }
 
 
@@ -114,6 +116,7 @@ impl Message {
 
             buf.resize(buf.capacity(), 0);
 
+
             loop {
                 let require_length: usize;
                 if size > buf.capacity() {
@@ -127,10 +130,17 @@ impl Message {
                     }
 
                     if self.body.is_none() {
-                        self.body = Some(BytesMut::new());
+                        self.body = Some(Body::new_for_incoming(size));
+                        let content_encoding = self.header.get_content_encoding();
+                        if content_encoding.is_err() {
+                            return 400;
+                        }
+                        if let Some(ct) = content_encoding.unwrap() {
+                            self.body.as_mut().unwrap().set_compression_type(ct);
+                        }
                     }
                     let bref = self.body.as_mut().unwrap();
-                    bref.put_slice(&buf[..rl]);
+                    bref.write(&buf[..rl]);
 
                     size -= rl;
                     if size == 0 {
@@ -170,8 +180,25 @@ impl Message {
         }
 
         let mut body_length: usize = 0;
-        if let Some(body) = self.body.as_ref() {
-            body_length = body.len()
+        if let Some(body) = self.body.as_mut() {
+            _ = body.flush();
+            body_length = body.len();
+            match body.get_compression_type() {
+                None => {}
+                Some(ct) => {
+                    match ct {
+                        CompressionType::Gzip => {
+                            self.header.set("content-encoding", "gzip");
+                        }
+                        CompressionType::Deflate => {
+                            self.header.set("content-encoding", "deflate");
+                        }
+                        CompressionType::Br => {
+                            self.header.set("content-encoding", "br");
+                        }
+                    }
+                }
+            }
         }
 
         self.header
@@ -195,7 +222,7 @@ impl Message {
         _ = stream.write("\r\n".as_bytes()).await;
 
         if let Some(body) = self.body.as_ref() {
-            _ = stream.write(body).await;
+            _ = stream.write(body.bytes()).await;
         }
         return stream.flush().await;
     }

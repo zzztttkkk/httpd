@@ -1,8 +1,11 @@
 use std::{cell::RefCell, collections::HashMap};
+use std::fmt::format;
+use crate::http::body::CompressionType;
 
 pub struct Header {
     val: Option<HashMap<String, Vec<String>>>,
     content_length: RefCell<Option<Result<usize, String>>>,
+    content_encoding: RefCell<Option<Result<Option<CompressionType>, String>>>,
 }
 
 impl Header {
@@ -10,6 +13,7 @@ impl Header {
         return Self {
             val: None,
             content_length: RefCell::new(None),
+            content_encoding: RefCell::new(None),
         };
     }
 
@@ -74,14 +78,14 @@ impl Header {
     }
 
     pub fn get(&self, key: &str) -> Option<&String> {
-        match self.getall(key) {
+        return match self.getall(key) {
             Some(vs) => {
-                return vs.first();
+                vs.first()
             }
             None => {
-                return None;
+                None
             }
-        }
+        };
     }
 
     pub fn getall(&self, key: &str) -> Option<&Vec<String>> {
@@ -127,6 +131,49 @@ impl Header {
         *cl_ref = Some(Ok(size));
         drop(cl_ref);
         self.set("content-length", size.to_string().as_str());
+    }
+
+    pub fn get_content_encoding(&self) -> Result<Option<CompressionType>, String> {
+        let mut ce_ref = self.content_encoding.borrow_mut();
+        if ce_ref.is_none() {
+            match self.getall("content-encoding").as_ref() {
+                None => {
+                    *ce_ref = Some(Ok(None));
+                }
+                Some(vs) => {
+                    for v in *vs {
+                        for ele in v.split(',') {
+                            let ele = ele.trim();
+                            if ele.is_empty() {
+                                continue;
+                            }
+                            return match ele {
+                                "br" => {
+                                    *ce_ref = Some(Ok(Some(CompressionType::Br)));
+                                    ce_ref.as_ref().unwrap().clone()
+                                }
+                                "deflate" => {
+                                    *ce_ref = Some(Ok(Some(CompressionType::Deflate)));
+                                    ce_ref.as_ref().unwrap().clone()
+                                }
+                                "gzip" => {
+                                    *ce_ref = Some(Ok(Some(CompressionType::Gzip)));
+                                    ce_ref.as_ref().unwrap().clone()
+                                }
+                                _ => {
+                                    *ce_ref = Some(
+                                        Err(format!("unsupported content encoding value, {}", ele).to_string())
+                                    );
+                                    ce_ref.as_ref().unwrap().clone()
+                                }
+                            };
+                        }
+                    }
+                    *ce_ref = Some(Ok(None));
+                }
+            }
+        }
+        return ce_ref.as_ref().unwrap().clone();
     }
 
     pub fn each<F: FnMut(&String, &Vec<String>) -> ()>(&self, mut visitor: F) {

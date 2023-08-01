@@ -41,7 +41,7 @@ impl ConfigSocket {
         self.read_buf_cap.less_then(1024, 1024 * 8);
         self.write_buf_cap.less_then(1024, 1024 * 8);
         self.waiting_step.less_then(1, 50);
-        if (self.max_waiting_times < 1) {
+        if self.max_waiting_times < 1 {
             self.max_waiting_times = 20;
         }
     }

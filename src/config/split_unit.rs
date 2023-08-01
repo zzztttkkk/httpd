@@ -3,12 +3,12 @@ static DECIMAL_CHARS: &'static str = "0123456789";
 pub(crate) fn split_unit<'a>(v: &'a str) -> (&'a str, &'a str) {
     let mut unit_idx = -1;
     for (idx, c) in v.as_bytes().iter().enumerate() {
-        if (!DECIMAL_CHARS.contains(*c as char)) {
+        if !DECIMAL_CHARS.contains(*c as char) {
             unit_idx = idx as i32;
             break;
         }
     }
-    if (unit_idx < 0) {
+    if unit_idx < 0 {
         return (v, "");
     }
     return (&(v[0..(unit_idx as usize)]), &(v[unit_idx as usize..]));
