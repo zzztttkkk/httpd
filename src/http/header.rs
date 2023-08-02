@@ -4,16 +4,12 @@ use crate::http::body::CompressionType;
 
 pub struct Header {
     val: Option<HashMap<String, Vec<String>>>,
-    content_length: RefCell<Option<Result<usize, String>>>,
-    content_encoding: RefCell<Option<Result<Option<CompressionType>, String>>>,
 }
 
 impl Header {
     pub fn new() -> Self {
         return Self {
             val: None,
-            content_length: RefCell::new(None),
-            content_encoding: RefCell::new(None),
         };
     }
 
@@ -100,80 +96,82 @@ impl Header {
         if let Some(map) = self.val.as_mut() {
             map.clear();
         }
-        let mut cl_ref = self.content_length.borrow_mut();
-        *cl_ref = None;
     }
 
     pub fn get_content_length(&self) -> Result<usize, String> {
-        let mut cl_ref = self.content_length.borrow_mut();
-        if cl_ref.is_none() {
-            let result: Result<usize, String>;
-            if let Some(txt) = self.get("content-length") {
-                match txt.parse::<usize>() {
-                    Ok(v) => {
-                        result = Ok(v);
-                    }
-                    Err(e) => {
-                        result = Err(e.to_string());
-                    }
+        let result: Result<usize, String>;
+        if let Some(txt) = self.get("content-length") {
+            match txt.parse::<usize>() {
+                Ok(v) => {
+                    result = Ok(v);
                 }
-            } else {
-                result = Ok(0);
+                Err(e) => {
+                    result = Err(e.to_string());
+                }
             }
-
-            *cl_ref = Some(result);
+        } else {
+            result = Ok(0);
         }
-        return cl_ref.as_ref().unwrap().clone();
+        result
     }
 
     pub fn set_content_length(&mut self, size: usize) {
-        let mut cl_ref = self.content_length.borrow_mut();
-        *cl_ref = Some(Ok(size));
-        drop(cl_ref);
         self.set("content-length", size.to_string().as_str());
     }
 
     pub fn get_content_encoding(&self) -> Result<Option<CompressionType>, String> {
-        let mut ce_ref = self.content_encoding.borrow_mut();
-        if ce_ref.is_none() {
-            match self.getall("content-encoding").as_ref() {
-                None => {
-                    *ce_ref = Some(Ok(None));
-                }
-                Some(vs) => {
-                    for v in *vs {
-                        for ele in v.split(',') {
-                            let ele = ele.trim();
-                            if ele.is_empty() {
-                                continue;
+        return match self.getall("content-encoding").as_ref() {
+            None => {
+                Ok(None)
+            }
+            Some(vs) => {
+                for v in *vs {
+                    for ele in v.split(',') {
+                        let ele = ele.trim();
+                        if ele.is_empty() {
+                            continue;
+                        }
+                        return match ele {
+                            "br" => {
+                                Ok(Some(CompressionType::Br))
                             }
-                            return match ele {
-                                "br" => {
-                                    *ce_ref = Some(Ok(Some(CompressionType::Br)));
-                                    ce_ref.as_ref().unwrap().clone()
-                                }
-                                "deflate" => {
-                                    *ce_ref = Some(Ok(Some(CompressionType::Deflate)));
-                                    ce_ref.as_ref().unwrap().clone()
-                                }
-                                "gzip" => {
-                                    *ce_ref = Some(Ok(Some(CompressionType::Gzip)));
-                                    ce_ref.as_ref().unwrap().clone()
-                                }
-                                _ => {
-                                    *ce_ref = Some(
-                                        Err(format!("unsupported content encoding value, {}", ele).to_string())
-                                    );
-                                    ce_ref.as_ref().unwrap().clone()
-                                }
-                            };
+                            "deflate" => {
+                                Ok(Some(CompressionType::Deflate))
+                            }
+                            "gzip" => {
+                                Ok(Some(CompressionType::Gzip))
+                            }
+                            _ => {
+                                Err(format!("unsupported content encoding value, {}", ele).to_string())
+                            }
+                        };
+                    }
+                }
+                Ok(None)
+            }
+        };
+    }
+
+    pub fn is_chunked(&self) -> bool {
+        return match self.getall("transfer-encoding").as_ref() {
+            None => {
+                false
+            }
+            Some(vs) => {
+                for v in *vs {
+                    for ele in v.split(',') {
+                        let ele = ele.trim();
+                        if ele.is_empty() {
+                            continue;
+                        }
+                        if ele == "chunked" {
+                            return true;
                         }
                     }
-                    *ce_ref = Some(Ok(None));
                 }
+                false
             }
-        }
-        return ce_ref.as_ref().unwrap().clone();
+        };
     }
 
     pub fn each<F: FnMut(&String, &Vec<String>) -> ()>(&self, mut visitor: F) {

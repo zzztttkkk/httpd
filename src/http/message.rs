@@ -11,7 +11,6 @@ pub struct Message {
     pub(crate) body: Option<Body>,
 }
 
-
 impl Message {
     pub(crate) fn new() -> Self {
         return Self {
@@ -21,12 +20,138 @@ impl Message {
         };
     }
 
+    pub(crate) fn get_content_encoding(&self) -> Result<Option<CompressionType>, String> {
+        self.header.get_content_encoding()
+    }
+
+    pub(crate) fn set_content_encoding(&mut self, ct: CompressionType, for_outgoing: bool) {
+        if self.body.is_some() {
+            panic!("message's body is not none");
+        }
+
+        match ct {
+            CompressionType::Gzip => {
+                self.header.set("content-encoding", "gzip");
+            }
+            CompressionType::Deflate => {
+                self.header.set("content-encoding", "deflate");
+            }
+            CompressionType::Br => {
+                self.header.set("content-encoding", "br");
+            }
+        }
+
+        if for_outgoing {
+            self.body = Some(Body::new_for_outgoing(4096));
+        } else {
+            self.body = Some(Body::new_for_incoming(4096));
+        }
+    }
+
+    async fn read_empty_line<T: AsyncBufReadExt + Unpin>(stream: &mut T, buf: &mut Vec<u8>) -> bool {
+        return if let Ok(rel) = stream.take(2).read_until(b'\n', buf).await {
+            rel == 2
+        } else {
+            false
+        };
+    }
+
+    fn ensure_body(&mut self, size: Option<usize>) -> bool {
+        if self.body.is_some() {
+            return true;
+        }
+
+        self.body = Some(Body::new_for_incoming(size.unwrap_or(4096)));
+        return if let Ok(ce_opt) = self.get_content_encoding() {
+            if let Some(ct) = ce_opt {
+                self.body.as_mut().unwrap().set_compression_type(ct);
+            }
+            true
+        } else {
+            false
+        };
+    }
+
+    async fn read_chunked_body<T: AsyncBufReadExt + Unpin>(
+        &mut self,
+        stream: &mut T,
+        buf: &mut Vec<u8>,
+    ) -> u32 {
+        if !self.ensure_body(None) {
+            return 400;
+        }
+
+        let mut chunk_size: Option<usize> = None;
+        loop {
+            match chunk_size.as_ref() {
+                None => {
+                    buf.clear();
+                    match stream.take(36).read_until(b'\n', buf).await {
+                        Ok(rl) => {
+                            if let Ok(line) = std::str::from_utf8(&buf[..rl - 2]) {
+                                if let Ok(v) = line.parse::<usize>() {
+                                    chunk_size = Some(v);
+                                    continue;
+                                } else {
+                                    return 400;
+                                }
+                            } else {
+                                return 400;
+                            }
+                        }
+                        Err(_) => {
+                            return 400;
+                        }
+                    }
+                }
+                Some(sizeref) => {
+                    let mut current_chunk_remain_size = *sizeref;
+                    if current_chunk_remain_size == 0 {
+                        if Message::read_empty_line(stream, buf).await {
+                            return 0;
+                        }
+                        return 400;
+                    }
+
+                    buf.resize(buf.capacity(), 0);
+
+                    loop {
+                        let current_read_length: usize;
+                        if current_chunk_remain_size > buf.capacity() {
+                            current_read_length = buf.capacity();
+                        } else {
+                            current_read_length = current_chunk_remain_size;
+                        }
+
+                        if let Ok(rl) = stream.read_exact(&mut buf[..current_read_length]).await {
+                            if rl < 1 {
+                                return 1;
+                            }
+
+                            self.body.as_mut().unwrap().write(&buf[..rl]);
+                            current_chunk_remain_size -= rl;
+                            if current_chunk_remain_size == 0 {
+                                if Message::read_empty_line(stream, buf).await {
+                                    break;
+                                }
+                                return 400;
+                            }
+                        } else {
+                            return 400;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     pub(crate) async fn readfrom11<T: AsyncBufReadExt + Unpin>(
         &mut self,
         stream: &mut T,
         buf: &mut Vec<u8>,
         for_request: bool,
     ) -> u32 {
+        buf.clear();
         self.fl.0.clear();
         if let Ok(rl) = stream.take(30).read_until(b' ', buf).await {
             if rl < 2 {
@@ -106,7 +231,9 @@ impl Message {
             }
         }
 
-        // todo check chunked transfer-encoding
+        if self.header.is_chunked() {
+            return self.read_chunked_body(stream, buf).await;
+        }
 
         let content_length_result = self.header.get_content_length();
         if let Ok(mut size) = content_length_result {
@@ -116,7 +243,6 @@ impl Message {
 
             buf.resize(buf.capacity(), 0);
 
-
             loop {
                 let require_length: usize;
                 if size > buf.capacity() {
@@ -125,22 +251,13 @@ impl Message {
                     require_length = size;
                 }
                 if let Ok(rl) = stream.read_exact(&mut buf[..require_length]).await {
-                    if rl < 1 || rl > require_length {
+                    if rl < 1 {
                         return 1;
                     }
-
-                    if self.body.is_none() {
-                        self.body = Some(Body::new_for_incoming(size));
-                        let content_encoding = self.header.get_content_encoding();
-                        if content_encoding.is_err() {
-                            return 400;
-                        }
-                        if let Some(ct) = content_encoding.unwrap() {
-                            self.body.as_mut().unwrap().set_compression_type(ct);
-                        }
+                    if !self.ensure_body(Some(size)) {
+                        return 400;
                     }
-                    let bref = self.body.as_mut().unwrap();
-                    bref.write(&buf[..rl]);
+                    self.body.as_mut().unwrap().write(&buf[..rl]);
 
                     size -= rl;
                     if size == 0 {
@@ -183,22 +300,6 @@ impl Message {
         if let Some(body) = self.body.as_mut() {
             _ = body.flush();
             body_length = body.len();
-            match body.get_compression_type() {
-                None => {}
-                Some(ct) => {
-                    match ct {
-                        CompressionType::Gzip => {
-                            self.header.set("content-encoding", "gzip");
-                        }
-                        CompressionType::Deflate => {
-                            self.header.set("content-encoding", "deflate");
-                        }
-                        CompressionType::Br => {
-                            self.header.set("content-encoding", "br");
-                        }
-                    }
-                }
-            }
         }
 
         self.header
