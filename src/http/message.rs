@@ -208,13 +208,20 @@ impl Message {
 
         // todo on fl.2
 
+        // read header lines
         loop {
             buf.clear();
             if let Ok(rl) = stream.take(64 * 1024).read_until(b'\n', buf).await {
                 if rl < 1 {
                     return 1;
                 }
-                let line = unsafe { std::str::from_utf8_unchecked(&buf[..rl - 1]) }.trim_end();
+
+                let line_result = std::str::from_utf8(&buf[..rl - 1]);
+                if line_result.is_err() {
+                    return 400;
+                }
+
+                let line = line_result.unwrap().trim_end();
                 if line.is_empty() {
                     break;
                 }
@@ -224,8 +231,10 @@ impl Message {
                 if key.is_empty() {
                     return 400;
                 }
-                self.header
-                    .add(key, split_iter.next().unwrap_or("").trim_start());
+                self.header.add(
+                    key,
+                    split_iter.next().unwrap_or("").trim_start(),
+                );
             } else {
                 return 400;
             }
@@ -235,8 +244,7 @@ impl Message {
             return self.read_chunked_body(stream, buf).await;
         }
 
-        let content_length_result = self.header.get_content_length();
-        if let Ok(mut size) = content_length_result {
+        if let Ok(mut size) = self.header.get_content_length() {
             if size == 0 {
                 return 0;
             }
