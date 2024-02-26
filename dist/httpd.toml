@@ -1,6 +1,0 @@
-[server]
-hostname = "httpd.locdev"
-
-[server.tls]
-key = "./dist/httpd.locdev-key.pem"
-cert = "./dist/httpd.locdev.pem"
