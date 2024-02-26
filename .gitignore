@@ -3,4 +3,4 @@
 /.vscode
 
 /dist/*.pem
-/dist/*.toml
+/httpd.toml

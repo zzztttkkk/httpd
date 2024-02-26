@@ -1,10 +1,11 @@
-use serde::Deserialize;
 pub(crate) use crate::config::server::ServerConfig;
+use serde::Deserialize;
 
-mod tls;
+mod bytes_size;
+mod duration_in_millis;
 mod server;
-mod duration;
 mod split_uint;
+mod tls;
 
 #[derive(Deserialize, Clone, Default, Debug)]
 pub struct Config {
