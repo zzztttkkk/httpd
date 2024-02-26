@@ -1,10 +1,9 @@
-use std::{fs::File, io::BufReader, path::Path};
-
+use std::fs::File;
+use std::io::BufReader;
 use serde::Deserialize;
-use tokio_rustls::rustls::{Certificate, PrivateKey, ServerConfig};
 
-#[derive(Deserialize, Clone, Default)]
-pub struct ConfigTLS {
+#[derive(Deserialize, Clone, Default, Debug)]
+pub(crate) struct TlsConfig {
     #[serde(default)]
     pub cert: String,
 
@@ -12,45 +11,19 @@ pub struct ConfigTLS {
     pub key: String,
 }
 
-impl ConfigTLS {
-    pub fn autofix(&mut self) {}
+impl TlsConfig {
+    pub(crate) fn autofix(&mut self) {}
 
-    pub fn load(&self) -> Option<ServerConfig> {
+    pub(crate) fn load(&self) -> Option<tokio_rustls::rustls::ServerConfig> {
         if self.cert.is_empty() && self.key.is_empty() {
             return None;
         }
 
-        let mut certs = Vec::new();
-        for e in rustls_pemfile::certs(&mut BufReader::new(
-            File::open(Path::new(self.cert.as_str())).unwrap(),
-        ))
-        .unwrap()
-        {
-            certs.push(Certificate(e));
-        }
-        let mut keys = Vec::new();
-        for e in rustls_pemfile::pkcs8_private_keys(&mut BufReader::new(
-            File::open(Path::new(self.key.as_str())).unwrap(),
-        ))
-        .unwrap()
-        {
-            keys.push(PrivateKey(e));
-        }
-        if keys.is_empty() {
-            for e in rustls_pemfile::rsa_private_keys(&mut BufReader::new(
-                File::open(Path::new(self.key.as_str())).unwrap(),
-            ))
-            .unwrap()
-            {
-                keys.push(PrivateKey(e));
-            }
-        }
-        return Some(
-            ServerConfig::builder()
-                .with_safe_defaults()
-                .with_no_client_auth()
-                .with_single_cert(certs, keys.remove(0))
-                .unwrap(),
-        );
+        let msg = format!("httpd: failed to load tls key from `{}`, `{}`", self.cert, self.key);
+        let msg = &msg;
+
+        let certs = rustls_pemfile::certs(&mut BufReader::new(File::open(&self.cert).expect(msg))).map(|v| { v.expect(msg) }).collect();
+        let key = rustls_pemfile::private_key(&mut BufReader::new(File::open(&self.key).expect(msg))).expect(msg).expect(msg);
+        return Some(tokio_rustls::rustls::ServerConfig::builder().with_no_client_auth().with_single_cert(certs, Into::into(key)).expect(msg));
     }
 }

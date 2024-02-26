@@ -1,91 +1,97 @@
-#![allow(unused)]
-
-use std::io::Write;
-use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
-
 use clap::Parser;
-use tokio::net::TcpListener;
-
-use crate::config::{Args, Config};
-use crate::http::FsHandler;
+use crate::config::Config;
+use crate::conn::on_conn;
 
 mod config;
-mod http;
-mod utils;
+mod conn;
+
+#[derive(clap::Parser, Debug)]
+#[command(name = "httpd")]
+#[command(about = "A simple http server", long_about = None)]
+pub struct Args {
+    #[arg(name = "config", long, short, default_value = "")]
+    /// config file path(toml)
+    pub file: String,
+}
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() {
     let args = Args::parse();
-    let mut config;
-    if let Some(cf) = args.file {
-        let txt = std::fs::read_to_string(cf.as_str())?;
-        config = toml::from_str(txt.as_str())?;
+
+    let mut config: Config;
+
+    if !args.file.trim().is_empty() {
+        let txt = std::fs::read_to_string(args.file.trim()).unwrap();
+        config = toml::from_str(txt.as_str()).unwrap();
     } else {
         config = Config::default();
     }
     config.autofix();
 
-    let mut addr: String = args.addr.clone();
-    if !config.addr.is_empty() {
-        addr = config.addr.clone();
+    let config: &'static Config = unsafe { std::mem::transmute(&config) };
+
+    let listener = tokio::net::TcpListener::bind(config.server.addr.clone()).await.unwrap();
+    let tlscfg = config.server.tls.load();
+
+    let mut logo = format!("httpd listening @ {}, pid {}", config.server.addr, std::process::id());
+    if tlscfg.is_some() {
+        logo = format!("{}, tls ✅", logo);
     }
-    let listener = TcpListener::bind(&addr).await.unwrap();
-    let mut tls_acceptor: Option<tokio_rustls::TlsAcceptor> = None;
-    let mut proto = "http";
-    if let Some(tls_cfg) = config.tls.load() {
-        tls_acceptor = Some(tokio_rustls::TlsAcceptor::from(Arc::new(tls_cfg)));
-        proto = "https"
-    }
+    println!("{}", logo);
 
-    println!(
-        "[{}] httpd listening @ {}({}), Pid: {}",
-        utils::Time::currentstr(),
-        proto,
-        &addr,
-        std::process::id()
-    );
+    match tlscfg {
+        None => {
+            loop {
+                tokio::select! {
+                    result = listener.accept() => {
+                        if result.is_err() {
+                            continue;
+                        }
 
-    let alive_counter: Arc<AtomicI64> = Arc::new(AtomicI64::new(0));
-
-    let handler: Box<dyn http::Handler> = FsHandler::new(".", "/static/");
-    let handler: usize = unsafe { std::mem::transmute(&handler) };
-    let config: usize = unsafe { std::mem::transmute(&config) };
-
-    loop {
-        tokio::select! {
-            ar = listener.accept() => {
-                match ar {
-                    Err(_) => {
-                        continue;
-                    }
-                    Ok((stream, _)) => {
-                        let tls_acceptor = tls_acceptor.clone();
-                        let counter = alive_counter.clone();
+                        let (mut stream, addr) = result.unwrap();
                         tokio::spawn(async move {
-                            if let Some(tls_acceptor) = tls_acceptor {
-                                if let Ok(stream) = tls_acceptor.accept(stream).await{
-                                    http::conn(stream, counter, unsafe{ std::mem::transmute(config) }, unsafe{ std::mem::transmute(handler) }).await;
-                                }
-                                return;
-                            }
-                            http::conn(stream, counter, unsafe{ std::mem::transmute(config) }, unsafe{ std::mem::transmute(handler) }).await;
+                            let (r,w ) = stream.split();
+                            on_conn(r, w, addr, config).await;
                         });
+                    },
+                    _ = tokio::signal::ctrl_c() => {
+                        break;
                     }
                 }
             }
-            _ = tokio::signal::ctrl_c() => {
-                println!("[{}] httpd is preparing to shutdown", utils::Time::currentstr());
-                loop {
-                    if alive_counter.load(Ordering::Relaxed) < 1 {
+        }
+        Some(tlscfg) => {
+            let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(tlscfg));
+
+            loop {
+                tokio::select! {
+                    result = listener.accept() => {
+                        if result.is_err() {
+                            continue;
+                        }
+
+                        let (stream, addr) = result.unwrap();
+                        let acceptor = acceptor.clone();
+                        tokio::spawn(async move {
+                            match acceptor.accept(stream).await {
+                                Ok(stream) => {
+                                    let (r, w) = tokio::io::split(stream);
+                                    on_conn(r, w, addr, config).await;
+                                }
+                                Err(err) => {
+                                    println!("httpd: tls handshake failed, {}", err);
+                                }
+                            }
+                        });
+                    },
+                    _ = tokio::signal::ctrl_c() => {
                         break;
                     }
-                    tokio::time::sleep(Duration::from_millis(10)).await;
                 }
-                println!("[{}] httpd is gracefully shutdown", utils::Time::currentstr());
-                return Ok(());
             }
         }
     }
+
+    println!("httpd gracefully shutdown");
 }

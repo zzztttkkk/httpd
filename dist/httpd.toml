@@ -1,6 +1,6 @@
-[message]
-max_incoming_body_size = 1024
+[server]
+hostname = "httpd.locdev"
 
-[tls]
-cert = "./dist/httpd.local+2.pem"
-key = "./dist/httpd.local+2-key.pem"
+[server.tls]
+key = "./dist/httpd.locdev-key.pem"
+cert = "./dist/httpd.locdev.pem"
