@@ -38,7 +38,7 @@ impl<'de> Visitor<'de> for DurationInMillsVisitor {
     where
         E: serde::de::Error,
     {
-        if (v.is_empty()) {
+        if v.is_empty() {
             return Ok(DurationInMillis::new(0));
         }
 
@@ -46,7 +46,7 @@ impl<'de> Visitor<'de> for DurationInMillsVisitor {
         let mut amount: u64 = 0;
 
         for (nums, units) in items {
-            let mut num: u64 = 0;
+            let num: u64;
             match nums.parse::<u64>() {
                 Ok(v) => {
                     num = v;
@@ -56,7 +56,7 @@ impl<'de> Visitor<'de> for DurationInMillsVisitor {
                 }
             }
 
-            let mut unit = 1;
+            let unit;
             match units.to_lowercase().trim() {
                 "" | "ms" => {
                     unit = 1;
@@ -77,11 +77,14 @@ impl<'de> Visitor<'de> for DurationInMillsVisitor {
                     unit = 7 * 24 * 60 * 60 * 1000;
                 }
                 _ => {
-                    return Err(E::custom(format!("bad unit, `{}` not in `ms,s,m,h,d,w`", units)));
+                    return Err(E::custom(format!(
+                        "bad unit, `{}` not in `ms,s,m,h,d,w`",
+                        units
+                    )));
                 }
             }
 
-            amount += (num * unit);
+            amount += num * unit;
         }
 
         Ok(DurationInMillis::new(amount))

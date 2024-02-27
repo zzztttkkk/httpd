@@ -1,7 +1,3 @@
-#![allow(dead_code)]
-#![allow(unused)]
-#![allow(clippy::needless_return)]
-
 use crate::config::Config;
 use crate::conn::on_conn;
 use clap::Parser;
@@ -10,6 +6,9 @@ use std::sync::Arc;
 
 mod config;
 mod conn;
+mod http11;
+mod message;
+pub mod uitls;
 
 #[derive(clap::Parser, Debug)]
 #[command(name = "httpd")]
@@ -112,7 +111,7 @@ async fn main() {
                                             let (r, w) = tokio::io::split(stream);
                                             on_conn(r, w, addr, config).await;
                                         },
-                                        Err(e) => {
+                                        Err(_) => {
                                         },
                                     }
                                 },
@@ -128,5 +127,5 @@ async fn main() {
         }
     }
 
-    println!("httpd gracefully shutdown");
+    println!("httpd gracefully shutdown")
 }

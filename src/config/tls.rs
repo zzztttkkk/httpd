@@ -39,11 +39,11 @@ impl TlsConfig {
                 .expect(msg)
                 .expect(msg);
 
-        return Some(
+        Some(
             tokio_rustls::rustls::ServerConfig::builder()
                 .with_no_client_auth()
                 .with_single_cert(certs, Into::into(key))
                 .expect(msg),
-        );
+        )
     }
 }

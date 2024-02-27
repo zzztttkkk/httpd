@@ -25,7 +25,7 @@ impl<'de> Visitor<'de> for SizeInBytesVisitor {
     where
         E: serde::de::Error,
     {
-        if (v.is_empty()) {
+        if v.is_empty() {
             return Ok(BytesSize(0));
         }
 
@@ -33,7 +33,7 @@ impl<'de> Visitor<'de> for SizeInBytesVisitor {
         let mut amount: usize = 0;
 
         for (nums, units) in items {
-            let mut num: u64 = 0;
+            let num: u64;
             match nums.parse::<u64>() {
                 Ok(v) => {
                     num = v;
@@ -43,7 +43,7 @@ impl<'de> Visitor<'de> for SizeInBytesVisitor {
                 }
             }
 
-            let mut unit = 1;
+            let unit;
             match units.to_lowercase().trim() {
                 "" | "b" => {
                     unit = 1;
@@ -97,6 +97,6 @@ max_size="1kb"
 "#,
         )
         .unwrap();
-        println!("{:?}", config);
+        println!("{:?}", config.max_size);
     }
 }

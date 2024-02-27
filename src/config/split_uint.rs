@@ -1,9 +1,7 @@
-use std::cell::RefCell;
-
 pub(crate) fn split_unit(v: &str) -> Vec<(String, String)> {
     let mut items: Vec<(String, String)> = vec![Default::default()];
 
-    let mut prev = None;
+    let mut prev: Option<char> = None;
     let mut unit_begin = false;
     for char in v.chars() {
         if char.is_whitespace() {
@@ -24,17 +22,15 @@ pub(crate) fn split_unit(v: &str) -> Vec<(String, String)> {
             items.last_mut().unwrap().1.push(char);
         }
 
-        if prev.is_none() {
-            prev = Some(char);
-        } else {
-            if (prev.unwrap().is_numeric() && !char.is_numeric()) {
+        if prev.is_some() {
+            if prev.unwrap().is_numeric() && !char.is_numeric() {
                 unit_begin = true;
             }
         }
-
         prev = Some(char);
     }
-    return items;
+
+    items
 }
 
 #[cfg(test)]
