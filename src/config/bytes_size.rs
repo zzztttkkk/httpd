@@ -3,7 +3,7 @@ use serde::{de::Visitor, Deserialize};
 use super::split_uint::split_unit;
 
 #[derive(Debug, Default, Clone, Copy)]
-pub struct BytesSize(usize);
+pub struct BytesSize(pub(crate) usize);
 
 pub struct SizeInBytesVisitor;
 

@@ -1,14 +1,18 @@
 use crate::config::Config;
 use crate::conn::on_conn;
 use clap::Parser;
-use std::ops::Deref;
 use std::sync::Arc;
+use tracing::{info, trace};
 
 mod config;
 mod conn;
+mod ctx;
 mod http11;
 mod message;
+mod protocols;
+mod request;
 pub mod uitls;
+mod ws;
 
 #[derive(clap::Parser, Debug)]
 #[command(name = "httpd")]
@@ -42,20 +46,28 @@ async fn main() {
 
     let config: &'static Config = unsafe { std::mem::transmute(&config) };
 
-    let listener = tokio::net::TcpListener::bind(config.server.addr.clone())
+    // logging init
+    tracing::subscriber::set_global_default(
+        tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::TRACE)
+            .finish(),
+    )
+    .expect("logging init failed");
+
+    let listener = tokio::net::TcpListener::bind(config.tcp.addr.clone())
         .await
         .unwrap();
-    let tlscfg = config.server.tls.load();
+    let tlscfg = config.tcp.tls.load();
 
     let mut logo = format!(
-        "httpd listening @ {}, pid {}",
-        config.server.addr,
+        "listening @ {}, pid {}",
+        config.tcp.addr,
         std::process::id()
     );
     if tlscfg.is_some() {
         logo = format!("{}, tls ✅", logo);
     }
-    println!("{}", logo);
+    info!("{}", logo);
 
     match tlscfg {
         None => loop {
@@ -78,7 +90,7 @@ async fn main() {
         },
         Some(tlscfg) => {
             let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(tlscfg));
-            let timeout = config.server.tls.timeout.deref().clone();
+            let timeout = config.tcp.tls.timeout.0.clone();
 
             loop {
                 tokio::select! {
@@ -111,11 +123,20 @@ async fn main() {
                                             let (r, w) = tokio::io::split(stream);
                                             on_conn(r, w, addr, config).await;
                                         },
-                                        Err(_) => {
+                                        Err(e) => {
+                                            #[cfg(debug_assertions)]
+                                            {
+                                                trace!("tls handshake failed, {}, {}", addr, e);
+                                            }
                                         },
                                     }
                                 },
-                                None => {},
+                                None => {
+                                    #[cfg(debug_assertions)]
+                                    {
+                                        trace!("tls handshake timeout, {}", addr);
+                                    }
+                                },
                             }
                         });
                     },
@@ -127,5 +148,5 @@ async fn main() {
         }
     }
 
-    println!("httpd gracefully shutdown")
+    info!("gracefully shutdown");
 }

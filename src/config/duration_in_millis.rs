@@ -2,7 +2,7 @@ use crate::config::split_uint::split_unit;
 use serde::{de::Visitor, Deserialize};
 
 #[derive(Default, Debug, Clone, Copy)]
-pub struct DurationInMillis(std::time::Duration);
+pub struct DurationInMillis(pub(crate) std::time::Duration);
 
 impl DurationInMillis {
     pub(crate) fn new(ms: u64) -> Self {
