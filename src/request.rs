@@ -1,6 +1,6 @@
 use crate::message::Message;
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub(crate) struct Request {
     pub(crate) msg: Message,
 }

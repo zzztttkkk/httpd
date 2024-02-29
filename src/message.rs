@@ -1,7 +1,6 @@
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
-use toml::de;
 
-use crate::{config::Config, ctx::ConnContext, uitls::multi_map::MultiMap};
+use crate::{ctx::ConnContext, uitls::multi_map::MultiMap};
 
 enum ReadState {
     None,
@@ -11,20 +10,73 @@ enum ReadState {
     HeadersDone,
 }
 
-#[derive(Debug, Default)]
+#[derive(Default)]
+pub(crate) struct MessageBody {
+    pub(crate) internal: bytebuffer::ByteBuffer,
+    pub(crate) w: Option<Box<dyn std::io::Write + Unpin>>,
+}
+
+// TODO remove this unsafe...😓😓😓😓😓😓😓
+pub(crate) struct BytesBufferProxy(u64);
+
+impl BytesBufferProxy {
+    fn ptr(&self) -> &mut bytebuffer::ByteBuffer {
+        unsafe { std::mem::transmute(self.0) }
+    }
+}
+
+impl std::io::Write for BytesBufferProxy {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.ptr().write(buf)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.ptr().flush()
+    }
+}
+
+pub(crate) enum CompressionType {
+    Gzip,
+    Deflate,
+}
+
+impl MessageBody {
+    pub(crate) fn compress(&mut self, ct: CompressionType) {
+        let x = Box::new(flate2::write::GzEncoder::new(
+            BytesBufferProxy(unsafe { std::mem::transmute(&self.internal) }),
+            flate2::Compression::default(),
+        ));
+
+        self.w = Some(x);
+    }
+}
+
+#[derive(Default)]
 pub(crate) struct Message {
     firstline: (String, String, String),
     headers: MultiMap,
-    body: bytebuffer::ByteBuffer,
+    body: MessageBody,
 }
 
 pub(crate) enum MessageReadCode {
     Ok,
     ConnReadError,
     BadDatagram,
+    ReachMaxBodySize,
+    BadContentLength,
 }
 
 impl Message {
+    fn get_content_length(&self) -> Result<usize, ()> {
+        match self.headers.get("content-length") {
+            Some(vs) => match vs.parse::<usize>() {
+                Ok(num) => Ok(num),
+                Err(_) => Err(()),
+            },
+            None => Ok(0),
+        }
+    }
+
     pub(crate) async fn from11<R: AsyncBufReadExt + Unpin, W: AsyncWriteExt + Unpin>(
         &mut self,
         ctx: &mut ConnContext<R, W>,
@@ -32,6 +84,7 @@ impl Message {
         let mut state = ReadState::None;
         let reader = &mut ctx.reader;
         let buf = &mut ctx.buf;
+        let config = &(ctx.config.http);
 
         loop {
             match state {
@@ -52,7 +105,11 @@ impl Message {
                 }
                 ReadState::FirstLine0 => {
                     let dest = unsafe { (&mut self.firstline.1).as_mut_vec() };
-                    match reader.take(128).read_until(b' ', dest).await {
+                    match reader
+                        .take(config.max_url_size.u64())
+                        .read_until(b' ', dest)
+                        .await
+                    {
                         Ok(size) => {
                             if size < 1 {
                                 return MessageReadCode::BadDatagram;
@@ -79,12 +136,60 @@ impl Message {
                         }
                     }
                 }
-                ReadState::FirstLine2 => loop {},
-                ReadState::HeadersDone => todo!(),
+                ReadState::FirstLine2 => loop {
+                    match reader
+                        .take(config.max_header_line_size.u64())
+                        .read_until(b'\n', buf)
+                        .await
+                    {
+                        Ok(size) => {
+                            if size < 2 {
+                                return MessageReadCode::BadDatagram;
+                            }
+                            if size == 2 {
+                                state = ReadState::HeadersDone;
+                                break;
+                            }
+                            format!("{}", std::str::from_utf8(&buf[..size]).unwrap());
+                        }
+                        Err(_) => {
+                            return MessageReadCode::ConnReadError;
+                        }
+                    }
+                },
+                ReadState::HeadersDone => match self.get_content_length() {
+                    Ok(mut remain_size) => {
+                        if remain_size > config.max_body_size.u64() as usize {
+                            return MessageReadCode::ReachMaxBodySize;
+                        }
+
+                        let cap = buf.capacity();
+                        unsafe { buf.set_len(cap) };
+
+                        loop {
+                            let mut buf = buf.as_mut_slice();
+                            if remain_size < cap {
+                                buf = &mut buf[..remain_size];
+                            }
+                            match reader.read(buf).await {
+                                Ok(size) => {
+                                    remain_size -= size;
+                                    if remain_size < 1 {
+                                        return MessageReadCode::Ok;
+                                    }
+                                }
+                                Err(_) => {
+                                    return MessageReadCode::ConnReadError;
+                                }
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        return MessageReadCode::BadContentLength;
+                    }
+                },
             }
         }
-
-        MessageReadCode::Ok
     }
 }
 

@@ -155,6 +155,25 @@ impl MultiMap {
         self.ismap = true;
     }
 
+    pub fn getall(&self, k: &str) -> Option<&Vec<String>> {
+        if self.ismap {
+            return self.map.as_ref().unwrap().get(k);
+        }
+        for (key, vs) in self.vec.iter() {
+            if key == k {
+                return Some(vs);
+            }
+        }
+        None
+    }
+
+    pub fn get(&self, k: &str) -> Option<&String> {
+        match self.getall(k) {
+            Some(vs) => vs.first(),
+            None => None,
+        }
+    }
+
     pub fn each<V: Fn(&str, &Vec<String>) -> bool>(&self, visitor: V) {
         if self.ismap {
             for (k, vs) in self.map.as_ref().unwrap().iter() {

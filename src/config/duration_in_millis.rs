@@ -8,6 +8,11 @@ impl DurationInMillis {
     pub(crate) fn new(ms: u64) -> Self {
         Self(std::time::Duration::from_millis(ms))
     }
+
+    #[inline]
+    pub fn duration(&self) -> std::time::Duration {
+        self.0
+    }
 }
 
 impl std::ops::Deref for DurationInMillis {

@@ -5,6 +5,13 @@ use super::split_uint::split_unit;
 #[derive(Debug, Default, Clone, Copy)]
 pub struct BytesSize(pub(crate) usize);
 
+impl BytesSize {
+    #[inline]
+    pub fn u64(&self) -> u64 {
+        self.0 as u64
+    }
+}
+
 pub struct SizeInBytesVisitor;
 
 impl<'de> Visitor<'de> for SizeInBytesVisitor {
