@@ -13,10 +13,10 @@ enum ReadState {
 #[derive(Default)]
 pub(crate) struct MessageBody {
     pub(crate) internal: bytebuffer::ByteBuffer,
-    pub(crate) w: Option<Box<dyn std::io::Write + Unpin>>,
+    pub(crate) w: Option<Box<dyn std::io::Write + Send>>,
 }
 
-// TODO remove this unsafe...😓😓😓😓😓😓😓
+// TODO remove this unsafe
 pub(crate) struct BytesBufferProxy(u64);
 
 impl BytesBufferProxy {
@@ -35,19 +35,27 @@ impl std::io::Write for BytesBufferProxy {
     }
 }
 
-pub(crate) enum CompressionType {
+enum CompressionType {
     Gzip,
     Deflate,
 }
 
 impl MessageBody {
-    pub(crate) fn compress(&mut self, ct: CompressionType) {
-        let x = Box::new(flate2::write::GzEncoder::new(
-            BytesBufferProxy(unsafe { std::mem::transmute(&self.internal) }),
-            flate2::Compression::default(),
-        ));
-
-        self.w = Some(x);
+    pub(crate) fn enable_compression(&mut self, ct: CompressionType) {
+        match ct {
+            CompressionType::Gzip => {
+                self.w = Some(Box::new(flate2::write::GzEncoder::new(
+                    BytesBufferProxy(unsafe { std::mem::transmute(&self.internal) }),
+                    flate2::Compression::default(),
+                )))
+            }
+            CompressionType::Deflate => {
+                self.w = Some(Box::new(flate2::write::DeflateEncoder::new(
+                    BytesBufferProxy(unsafe { std::mem::transmute(&self.internal) }),
+                    flate2::Compression::default(),
+                )))
+            }
+        }
     }
 }
 

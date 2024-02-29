@@ -147,7 +147,7 @@ impl MultiMap {
         if self.map.is_none() {
             self.map = Some(Default::default());
         }
-        let mut map = self.map.as_mut().unwrap();
+        let map = self.map.as_mut().unwrap();
         for (k, vs) in self.vec.iter() {
             map.insert(k.clone(), vs.clone());
         }
