@@ -12,7 +12,7 @@ mod tls;
 
 #[derive(Deserialize, Clone, Default, Debug)]
 pub struct Config {
-    #[serde(default, alias = "Logging", alias = "Log")]
+    #[serde(default, alias = "Logging", alias = "Log", alias = "log")]
     pub logging: LoggingConfig,
 
     #[serde(default, alias = "Tcp")]

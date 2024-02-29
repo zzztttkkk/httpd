@@ -1,6 +1,6 @@
-use tokio::io::{AsyncBufReadExt, AsyncReadExt};
+use tracing::trace;
 
-use crate::{config::Config, ctx::ConnContext, message::Message, protocols::Protocol};
+use crate::{ctx::ConnContext, message::Message, protocols::Protocol, request::Request};
 
 pub(crate) async fn serve<
     R: tokio::io::AsyncBufReadExt + Unpin,
@@ -8,11 +8,28 @@ pub(crate) async fn serve<
 >(
     ctx: &mut ConnContext<R, W>,
 ) -> Protocol {
-    let mut request = Message::default();
+    let mut request = Request::default();
     let mut response = Message::default();
 
     loop {
-        let code = (&mut request).from11(ctx).await;
+        match (&mut (request.msg)).from11(ctx).await {
+            crate::message::MessageReadCode::Ok => {
+                trace!(
+                    "request: {} {} {}",
+                    request.method(),
+                    request.url(),
+                    request.version()
+                );
+                break;
+            }
+            e => {
+                #[cfg(debug_assertions)]
+                {
+                    trace!("read http message failed, {}, {:?}", ctx.addr, e);
+                }
+                break;
+            }
+        }
     }
 
     Protocol::None

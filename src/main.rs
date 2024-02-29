@@ -13,6 +13,7 @@ mod protocols;
 mod request;
 pub mod uitls;
 mod ws;
+mod compression;
 
 #[derive(clap::Parser, Debug)]
 #[command(name = "httpd")]

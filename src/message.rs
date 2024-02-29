@@ -1,5 +1,8 @@
+use std::io::Write;
+
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 
+use crate::compression::CompressionImpl;
 use crate::{ctx::ConnContext, uitls::multi_map::MultiMap};
 
 enum ReadState {
@@ -10,50 +13,63 @@ enum ReadState {
     HeadersDone,
 }
 
-#[derive(Default)]
 pub(crate) struct MessageBody {
-    pub(crate) internal: bytebuffer::ByteBuffer,
-    pub(crate) w: Option<Box<dyn std::io::Write + Send>>,
+    pub(crate) internal: Option<Box<bytebuffer::ByteBuffer>>,
+    pub(crate) cw: Option<Box<dyn CompressionImpl<Box<bytebuffer::ByteBuffer>> + Send>>,
 }
 
-// TODO remove this unsafe
-pub(crate) struct BytesBufferProxy(u64);
-
-impl BytesBufferProxy {
-    fn ptr(&self) -> &mut bytebuffer::ByteBuffer {
-        unsafe { std::mem::transmute(self.0) }
+impl Default for MessageBody {
+    fn default() -> Self {
+        Self {
+            internal: Some(Box::new(Default::default())),
+            cw: None,
+        }
     }
 }
 
-impl std::io::Write for BytesBufferProxy {
+impl std::io::Write for MessageBody {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.ptr().write(buf)
+        match self.internal.as_mut() {
+            Some(inner) => inner.write(buf),
+            None => self.cw.as_mut().unwrap().append(buf),
+        }
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
-        self.ptr().flush()
+        Ok(())
     }
 }
 
-enum CompressionType {
-    Gzip,
+pub(crate) enum CompressionType {
+    Brotil,
     Deflate,
+    Gzip,
 }
 
 impl MessageBody {
-    pub(crate) fn enable_compression(&mut self, ct: CompressionType) {
+    pub(crate) fn enable_compression(mut self, ct: CompressionType, level: u32) {
+        let buf = self.internal.unwrap();
+        self.internal = None;
+
         match ct {
-            CompressionType::Gzip => {
-                self.w = Some(Box::new(flate2::write::GzEncoder::new(
-                    BytesBufferProxy(unsafe { std::mem::transmute(&self.internal) }),
-                    flate2::Compression::default(),
-                )))
+            CompressionType::Brotil => {
+                let mut params = brotli::enc::BrotliEncoderParams::default();
+                params.quality = level as i32;
+                self.cw = Some(Box::new(brotli::CompressorWriter::with_params(
+                    buf, 4096, &params,
+                )));
             }
             CompressionType::Deflate => {
-                self.w = Some(Box::new(flate2::write::DeflateEncoder::new(
-                    BytesBufferProxy(unsafe { std::mem::transmute(&self.internal) }),
-                    flate2::Compression::default(),
-                )))
+                self.cw = Some(Box::new(flate2::write::DeflateEncoder::new(
+                    buf,
+                    flate2::Compression::new(std::cmp::min(level, 9)),
+                )));
+            }
+            CompressionType::Gzip => {
+                self.cw = Some(Box::new(flate2::write::GzEncoder::new(
+                    buf,
+                    flate2::Compression::new(std::cmp::min(level, 9)),
+                )));
             }
         }
     }
@@ -61,11 +77,12 @@ impl MessageBody {
 
 #[derive(Default)]
 pub(crate) struct Message {
-    firstline: (String, String, String),
-    headers: MultiMap,
-    body: MessageBody,
+    pub(crate) firstline: (String, String, String),
+    pub(crate) headers: MultiMap,
+    pub(crate) body: MessageBody,
 }
 
+#[derive(Debug)]
 pub(crate) enum MessageReadCode {
     Ok,
     ConnReadError,
@@ -73,6 +90,8 @@ pub(crate) enum MessageReadCode {
     ReachMaxBodySize,
     BadContentLength,
 }
+
+const MAX_HEADER_NAME_LENGTH: usize = 256;
 
 impl Message {
     fn get_content_length(&self) -> Result<usize, ()> {
@@ -103,6 +122,8 @@ impl Message {
                             if size < 1 {
                                 return MessageReadCode::BadDatagram;
                             }
+                            // trim last space
+                            unsafe { dest.set_len(size - 1) };
                             state = ReadState::FirstLine0;
                             continue;
                         }
@@ -122,6 +143,7 @@ impl Message {
                             if size < 1 {
                                 return MessageReadCode::BadDatagram;
                             }
+                            unsafe { dest.set_len(size - 1) };
                             state = ReadState::FirstLine1;
                             continue;
                         }
@@ -133,9 +155,10 @@ impl Message {
                 ReadState::FirstLine1 => {
                     match reader.take(128).read_line(&mut self.firstline.2).await {
                         Ok(size) => {
-                            if size < 1 {
+                            if size < 3 {
                                 return MessageReadCode::BadDatagram;
                             }
+                            unsafe { ((&mut self.firstline.2).as_mut_vec()).set_len(size - 2) };
                             state = ReadState::FirstLine2;
                             continue;
                         }
@@ -144,29 +167,72 @@ impl Message {
                         }
                     }
                 }
-                ReadState::FirstLine2 => loop {
-                    match reader
-                        .take(config.max_header_line_size.u64())
-                        .read_until(b'\n', buf)
-                        .await
-                    {
-                        Ok(size) => {
-                            if size < 2 {
-                                return MessageReadCode::BadDatagram;
+                ReadState::FirstLine2 => {
+                    // TODO test
+                    let mut keytmp = [0 as u8; MAX_HEADER_NAME_LENGTH];
+                    let mut keyidx: usize;
+
+                    'readlines: loop {
+                        match reader
+                            .take(config.max_header_line_size.u64())
+                            .read_until(b'\n', buf)
+                            .await
+                        {
+                            Ok(size) => {
+                                if size < 2 {
+                                    return MessageReadCode::BadDatagram;
+                                }
+                                if size == 2 {
+                                    state = ReadState::HeadersDone;
+                                    break;
+                                }
+                                // trim `\r\n`
+                                unsafe { buf.set_len(size - 2) };
+
+                                keyidx = 0;
+                                for idx in 0..buf.len() {
+                                    let c = buf[idx];
+                                    if !c.is_ascii() {
+                                        return MessageReadCode::BadDatagram;
+                                    }
+
+                                    if c == b':' {
+                                        let key = unsafe {
+                                            std::str::from_utf8_unchecked(&keytmp[..keyidx])
+                                        }
+                                        .trim();
+
+                                        let value =
+                                            unsafe { std::str::from_utf8_unchecked(&buf[idx..]) }
+                                                .trim();
+                                        
+                                        println!("{}: {}", key, value);
+                                        self.headers.append(key, value);
+                                        break 'readlines;
+                                    }
+
+                                    if keyidx >= MAX_HEADER_NAME_LENGTH {
+                                        // header name too long
+                                        return MessageReadCode::BadDatagram;
+                                    }
+                                    unsafe {
+                                        *(keytmp.get_unchecked_mut(keyidx)) = c;
+                                    }
+                                    keyidx += 1;
+                                }
                             }
-                            if size == 2 {
-                                state = ReadState::HeadersDone;
-                                break;
+                            Err(_) => {
+                                return MessageReadCode::ConnReadError;
                             }
-                            format!("{}", std::str::from_utf8(&buf[..size]).unwrap());
-                        }
-                        Err(_) => {
-                            return MessageReadCode::ConnReadError;
                         }
                     }
-                },
+                }
                 ReadState::HeadersDone => match self.get_content_length() {
                     Ok(mut remain_size) => {
+                        if remain_size < 1 {
+                            return MessageReadCode::Ok;
+                        }
+
                         if remain_size > config.max_body_size.u64() as usize {
                             return MessageReadCode::ReachMaxBodySize;
                         }
@@ -181,6 +247,7 @@ impl Message {
                             }
                             match reader.read(buf).await {
                                 Ok(size) => {
+                                    _ = self.body.internal.as_mut().unwrap().write(&buf[..size]);
                                     remain_size -= size;
                                     if remain_size < 1 {
                                         return MessageReadCode::Ok;
@@ -205,11 +272,9 @@ impl Message {
 mod tests {
     #[test]
     fn test_unsafe_steing() {
-        let mut name = String::new();
-        let bytes = unsafe { (&mut name).as_mut_vec() };
-        bytes.push(211);
-        bytes.push(241);
-
-        println!("{:?}", name.len());
+        let a = 00;
+        let b = [0 as u8; 4096 * 10];
+        let c = 00;
+        println!("{:p} {:p} {:p}", &a, &b, &c);
     }
 }

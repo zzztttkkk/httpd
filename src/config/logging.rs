@@ -51,8 +51,9 @@ impl LoggingConfig {
 
         if self.debug {
             let subscriber = tracing_subscriber::fmt()
-                .pretty()
                 .with_max_level(tracing::Level::TRACE)
+                .with_file(true)
+                .with_line_number(true)
                 .finish();
             _ = tracing::subscriber::set_global_default(subscriber)
                 .expect("failed to init logging");

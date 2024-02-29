@@ -10,6 +10,7 @@ tokio = { version = " 1.36.0", features = ["full"] }
 bytebuffer = "2.2.0"
 chrono = "0.4.34"
 flate2 = "1.0.28"
+brotli = "3.4.0"
 clap = { version = "4.5.1", features = ["derive"] }
 toml = "0.8.10"
 serde = { version = "1.0.197", features = ["derive"] }
