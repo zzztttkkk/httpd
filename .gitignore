@@ -4,3 +4,4 @@
 
 /dist/*.pem
 /httpd.toml
+*.log

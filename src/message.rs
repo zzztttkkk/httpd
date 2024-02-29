@@ -25,11 +25,6 @@ pub(crate) enum MessageReadCode {
 }
 
 impl Message {
-    #[inline]
-    pub(crate) fn new() -> Self {
-        Default::default()
-    }
-
     pub(crate) async fn from11<R: AsyncBufReadExt + Unpin, W: AsyncWriteExt + Unpin>(
         &mut self,
         ctx: &mut ConnContext<R, W>,
@@ -84,10 +79,7 @@ impl Message {
                         }
                     }
                 }
-                ReadState::FirstLine2 => {
-                    loop {
-                    }
-                }
+                ReadState::FirstLine2 => loop {},
                 ReadState::HeadersDone => todo!(),
             }
         }

@@ -45,14 +45,7 @@ async fn main() {
     config.autofix();
 
     let config: &'static Config = unsafe { std::mem::transmute(&config) };
-
-    // logging init
-    tracing::subscriber::set_global_default(
-        tracing_subscriber::fmt()
-            .with_max_level(tracing::Level::TRACE)
-            .finish(),
-    )
-    .expect("logging init failed");
+    let _guards = config.logging.init();
 
     let listener = tokio::net::TcpListener::bind(config.tcp.addr.clone())
         .await
@@ -73,15 +66,20 @@ async fn main() {
         None => loop {
             tokio::select! {
                 result = listener.accept() => {
-                    if result.is_err() {
-                        continue;
+                    match result {
+                        Ok((mut stream, addr)) => {
+                            tokio::spawn(async move {
+                                let (r,w ) = stream.split();
+                                on_conn(r, w, addr, config).await;
+                            });
+                        },
+                        Err(e) => {
+                            #[cfg(debug_assertions)]
+                            {
+                                trace!("accept failed, {}", e);
+                            }
+                        },
                     }
-
-                    let (mut stream, addr) = result.unwrap();
-                    tokio::spawn(async move {
-                        let (r,w ) = stream.split();
-                        on_conn(r, w, addr, config).await;
-                    });
                 },
                 _ = tokio::signal::ctrl_c() => {
                     break;
@@ -95,50 +93,55 @@ async fn main() {
             loop {
                 tokio::select! {
                     result = listener.accept() => {
-                        if result.is_err() {
-                            continue;
-                        }
-
-                        let (stream, addr) = result.unwrap();
-                        let acceptor = acceptor.clone();
-
-                        tokio::spawn(async move {
-                            let mut handshake_result = None;
-
-                            if !timeout.is_zero() {
-                                tokio::select! {
-                                    r = acceptor.accept(stream) => {
-                                        handshake_result = Some(r);
-                                    }
-                                    _ =  tokio::time::sleep(timeout) => {}
+                        match result {
+                            Err(e) => {
+                                #[cfg(debug_assertions)]
+                                {
+                                    trace!("accept failed, {}", e);
                                 }
-                            } else {
-                                handshake_result = Some(acceptor.accept(stream).await);
-                            }
+                            },
+                            Ok((stream, addr)) => {
+                                let acceptor = acceptor.clone();
 
-                            match handshake_result {
-                                Some(handshake_result) => {
+                                tokio::spawn(async move {
+                                    let mut handshake_result = None;
+
+                                    if !timeout.is_zero() {
+                                        tokio::select! {
+                                            r = acceptor.accept(stream) => {
+                                                handshake_result = Some(r);
+                                            }
+                                            _ =  tokio::time::sleep(timeout) => {}
+                                        }
+                                    } else {
+                                        handshake_result = Some(acceptor.accept(stream).await);
+                                    }
+
                                     match handshake_result {
-                                        Ok(stream) => {
-                                            let (r, w) = tokio::io::split(stream);
-                                            on_conn(r, w, addr, config).await;
+                                        Some(handshake_result) => {
+                                            match handshake_result {
+                                                Ok(stream) => {
+                                                    let (r, w) = tokio::io::split(stream);
+                                                    on_conn(r, w, addr, config).await;
+                                                },
+                                                Err(e) => {
+                                                    #[cfg(debug_assertions)]
+                                                    {
+                                                        trace!("tls handshake failed, {}, {}", addr, e);
+                                                    }
+                                                },
+                                            }
                                         },
-                                        Err(e) => {
+                                        None => {
                                             #[cfg(debug_assertions)]
                                             {
-                                                trace!("tls handshake failed, {}, {}", addr, e);
+                                                trace!("tls handshake timeout, {}", addr);
                                             }
                                         },
                                     }
-                                },
-                                None => {
-                                    #[cfg(debug_assertions)]
-                                    {
-                                        trace!("tls handshake timeout, {}", addr);
-                                    }
-                                },
-                            }
-                        });
+                                });
+                            },
+                        }
                     },
                     _ = tokio::signal::ctrl_c() => {
                         break;

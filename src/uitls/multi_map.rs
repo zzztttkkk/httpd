@@ -143,11 +143,6 @@ impl MultiMap {
         self.ismap = false;
     }
 
-    #[inline]
-    fn veclen(&self) -> usize {
-        self.vec.len()
-    }
-
     fn tomap(&mut self) {
         if self.map.is_none() {
             self.map = Some(Default::default());
