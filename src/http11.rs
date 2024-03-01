@@ -14,12 +14,7 @@ pub(crate) async fn serve<
     loop {
         match (&mut (request.msg)).from11(ctx).await {
             crate::message::MessageReadCode::Ok => {
-                trace!(
-                    "request: $method: {} $url: {} $version: {}",
-                    request.method(),
-                    request.url(),
-                    request.version()
-                );
+                on_request(ctx, &mut request, &mut response).await;
                 break;
             }
             e => {
@@ -33,4 +28,17 @@ pub(crate) async fn serve<
     }
 
     Protocol::None
+}
+
+async fn on_request<R: tokio::io::AsyncBufReadExt + Unpin, W: tokio::io::AsyncWriteExt + Unpin>(
+    ctx: &mut ConnContext<R, W>,
+    req: &mut Request,
+    resp: &mut Message,
+) {
+    trace!(
+        "request: $method: {} $url: {} $version: {}",
+        req.method(),
+        req.url(),
+        req.version()
+    );
 }

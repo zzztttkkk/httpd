@@ -40,8 +40,8 @@ async fn main() {
 
     let mut config: Config = Default::default();
     if !args.file.trim().is_empty() {
-        let txt = std::fs::read_to_string(args.file.trim()).unwrap();
-        config = toml::from_str(txt.as_str()).unwrap();
+        let txt = std::fs::read_to_string(args.file.trim()).expect("read config file failed");
+        config = toml::from_str(txt.as_str()).expect("parse config file failed");
     }
     config.autofix();
 

@@ -89,6 +89,7 @@ pub(crate) enum MessageReadCode {
     BadDatagram,
     ReachMaxBodySize,
     BadContentLength,
+    ReachMaxHeadersCount,
 }
 
 const MAX_HEADER_NAME_LENGTH: usize = 256;
@@ -122,6 +123,9 @@ impl Message {
                 }
             };
         }
+
+        let max_header_line_size = config.max_header_line_size.u64();
+        let max_headers_count = config.max_headers_count;
 
         loop {
             match state {
@@ -186,8 +190,9 @@ impl Message {
 
                     'readlines: loop {
                         buf.clear();
+                        let mut hc = 0;
                         match reader
-                            .take(config.max_header_line_size.u64())
+                            .take(max_header_line_size)
                             .read_until(b'\n', buf)
                             .await
                         {
@@ -227,6 +232,10 @@ impl Message {
                                         .trim();
 
                                         self.headers.append(key, value);
+                                        hc += 1;
+                                        if hc > max_headers_count {
+                                            return MessageReadCode::ReachMaxHeadersCount;
+                                        }
                                         break 'readlines;
                                     }
 
