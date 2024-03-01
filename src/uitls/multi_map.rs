@@ -64,7 +64,7 @@ impl MultiMap {
 
         match Self::vec_find_or_empty(pairs, k) {
             Some(pos) => {
-                let vs = unsafe { pairs.get_unchecked_mut(pos) };
+                let vs = unsafe { pairs.get_unchecked_mut(pos) }; // safety: `pos` returned by `vec.position`
                 vs.1.push(v.to_string());
                 if vs.0.is_empty() {
                     vs.0 = k.to_string();
@@ -107,7 +107,7 @@ impl MultiMap {
         let pairs = &mut self.vec;
         match Self::vec_find(pairs, k) {
             Some(pos) => {
-                let vs = unsafe { pairs.get_unchecked_mut(pos) };
+                let vs = unsafe { pairs.get_unchecked_mut(pos) }; // safety: `pos` returned by `vec.position`
                 Self::vec_remove_by_value(&mut vs.1, v);
             }
             None => {}
@@ -124,7 +124,7 @@ impl MultiMap {
         let pairs = &mut self.vec;
         match Self::vec_find(pairs, k) {
             Some(pos) => {
-                let vs = unsafe { pairs.get_unchecked_mut(pos) };
+                let vs = unsafe { pairs.get_unchecked_mut(pos) }; // safety: `pos` returned by `vec.position`
                 vs.0.clear();
                 vs.1.clear();
             }

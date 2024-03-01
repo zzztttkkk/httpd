@@ -113,17 +113,27 @@ impl Message {
         let buf = &mut ctx.buf;
         let config = &(ctx.config.http);
 
+        macro_rules! ensure_ascii_graphic {
+            ($bytes:expr) => {
+                for b in ($bytes).iter() {
+                    if !b.is_ascii_graphic() && *b != b' ' {
+                        return MessageReadCode::BadDatagram;
+                    }
+                }
+            };
+        }
+
         loop {
             match state {
                 ReadState::None => {
-                    let dest = unsafe { (&mut self.firstline.0).as_mut_vec() };
+                    let dest = unsafe { (&mut self.firstline.0).as_mut_vec() }; // safety: no double copy
                     match reader.take(128).read_until(b' ', dest).await {
                         Ok(size) => {
                             if size < 1 {
                                 return MessageReadCode::BadDatagram;
                             }
-                            // trim last space
-                            unsafe { dest.set_len(size - 1) };
+                            unsafe { dest.set_len(size - 1) }; // safety: trim last space and len check in front
+                            ensure_ascii_graphic!(dest);
                             state = ReadState::FirstLine0;
                             continue;
                         }
@@ -133,7 +143,7 @@ impl Message {
                     }
                 }
                 ReadState::FirstLine0 => {
-                    let dest = unsafe { (&mut self.firstline.1).as_mut_vec() };
+                    let dest = unsafe { (&mut self.firstline.1).as_mut_vec() }; // safety: no double copy
                     match reader
                         .take(config.max_url_size.u64())
                         .read_until(b' ', dest)
@@ -143,7 +153,8 @@ impl Message {
                             if size < 1 {
                                 return MessageReadCode::BadDatagram;
                             }
-                            unsafe { dest.set_len(size - 1) };
+                            unsafe { dest.set_len(size - 1) }; // safety: trim last space and len check in front
+                            ensure_ascii_graphic!(dest);
                             state = ReadState::FirstLine1;
                             continue;
                         }
@@ -158,7 +169,9 @@ impl Message {
                             if size < 3 {
                                 return MessageReadCode::BadDatagram;
                             }
-                            unsafe { ((&mut self.firstline.2).as_mut_vec()).set_len(size - 2) };
+                            let bytes = unsafe { (&mut self.firstline.2).as_mut_vec() }; // safety: trim `\r\n` and len check in front
+                            unsafe { bytes.set_len(size - 2) };
+                            ensure_ascii_graphic!(bytes);
                             state = ReadState::FirstLine2;
                             continue;
                         }
@@ -168,11 +181,11 @@ impl Message {
                     }
                 }
                 ReadState::FirstLine2 => {
-                    // TODO test
                     let mut keytmp = [0 as u8; MAX_HEADER_NAME_LENGTH];
                     let mut keyidx: usize;
 
                     'readlines: loop {
+                        buf.clear();
                         match reader
                             .take(config.max_header_line_size.u64())
                             .read_until(b'\n', buf)
@@ -186,35 +199,41 @@ impl Message {
                                     state = ReadState::HeadersDone;
                                     break;
                                 }
-                                // trim `\r\n`
-                                unsafe { buf.set_len(size - 2) };
+                                unsafe { buf.set_len(size - 2) }; // safety: trim `\r\n` and len check in front
 
                                 keyidx = 0;
                                 for idx in 0..buf.len() {
                                     let c = buf[idx];
-                                    if !c.is_ascii() {
+                                    if !c.is_ascii_graphic() {
                                         return MessageReadCode::BadDatagram;
                                     }
 
                                     if c == b':' {
+                                        // safety: all bytes in `keytmp` is_ascii_graphic
                                         let key = unsafe {
                                             std::str::from_utf8_unchecked(&keytmp[..keyidx])
                                         }
                                         .trim();
 
-                                        let value =
-                                            unsafe { std::str::from_utf8_unchecked(&buf[idx..]) }
-                                                .trim();
-                                        
-                                        println!("{}: {}", key, value);
+                                        if idx + 1 >= buf.len() {
+                                            return MessageReadCode::BadDatagram;
+                                        }
+
+                                        // safety: not calling `std::str::from_utf8`, because i only want ascii chars in the header value
+                                        ensure_ascii_graphic!(&buf[(idx + 1)..]);
+                                        let value: &str = unsafe {
+                                            std::str::from_utf8_unchecked(&buf[(idx + 1)..])
+                                        }
+                                        .trim();
+
                                         self.headers.append(key, value);
                                         break 'readlines;
                                     }
 
                                     if keyidx >= MAX_HEADER_NAME_LENGTH {
-                                        // header name too long
                                         return MessageReadCode::BadDatagram;
                                     }
+                                    // safety: boundary check in front
                                     unsafe {
                                         *(keytmp.get_unchecked_mut(keyidx)) = c;
                                     }
@@ -238,7 +257,7 @@ impl Message {
                         }
 
                         let cap = buf.capacity();
-                        unsafe { buf.set_len(cap) };
+                        unsafe { buf.set_len(cap) }; // safety: just bytes array, no ref
 
                         loop {
                             let mut buf = buf.as_mut_slice();

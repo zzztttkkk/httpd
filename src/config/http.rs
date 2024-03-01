@@ -23,11 +23,13 @@ pub struct HttpConfig {
     pub max_body_size: BytesSize,
 
     #[serde(default, alias = "Compression")]
-    pub compression: bool,
+    pub compression: i32, // <= 0 : off
 }
 
 impl HttpConfig {
     pub fn autofix(&mut self) {
+        self.compression = std::cmp::min(11, self.compression);
+
         if !self.idle_timeout.is_zero() && self.idle_timeout.as_millis() < 10000 {
             self.idle_timeout = DurationInMillis(std::time::Duration::from_millis(10000));
         }

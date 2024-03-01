@@ -15,7 +15,7 @@ pub(crate) async fn serve<
         match (&mut (request.msg)).from11(ctx).await {
             crate::message::MessageReadCode::Ok => {
                 trace!(
-                    "request: {} {} {}",
+                    "request: $method: {} $url: {} $version: {}",
                     request.method(),
                     request.url(),
                     request.version()

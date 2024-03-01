@@ -4,6 +4,7 @@ use clap::Parser;
 use std::sync::Arc;
 use tracing::{info, trace};
 
+mod compression;
 mod config;
 mod conn;
 mod ctx;
@@ -13,7 +14,6 @@ mod protocols;
 mod request;
 pub mod uitls;
 mod ws;
-mod compression;
 
 #[derive(clap::Parser, Debug)]
 #[command(name = "httpd")]
@@ -45,7 +45,7 @@ async fn main() {
     }
     config.autofix();
 
-    let config: &'static Config = unsafe { std::mem::transmute(&config) };
+    let config: &'static Config = unsafe { std::mem::transmute(&config) }; // safety: just a global readonly value
     let _guards = config.logging.init();
 
     let listener = tokio::net::TcpListener::bind(config.tcp.addr.clone())
