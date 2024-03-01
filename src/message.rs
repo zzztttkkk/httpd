@@ -105,6 +105,53 @@ impl Message {
         }
     }
 
+    async fn _read_normal_body<R: AsyncBufReadExt + Unpin>(
+        &mut self,
+        reader: &mut R,
+        buf: &mut Vec<u8>,
+        mut remain_size: usize,
+    ) -> MessageReadCode {
+        let cap = buf.capacity();
+        unsafe { buf.set_len(cap) }; // safety: just bytes array, no ref
+
+        loop {
+            let mut buf = buf.as_mut_slice();
+            if remain_size < cap {
+                buf = &mut buf[..remain_size];
+            }
+            match reader.read(buf).await {
+                Ok(size) => {
+                    _ = self.body.internal.as_mut().unwrap().write(&buf[..size]);
+                    remain_size -= size;
+                    if remain_size < 1 {
+                        return MessageReadCode::Ok;
+                    }
+                }
+                Err(_) => {
+                    return MessageReadCode::ConnReadError;
+                }
+            }
+        }
+    }
+
+    async fn _read_chunked_body<R: AsyncBufReadExt + Unpin>(
+        &mut self,
+        reader: &mut R,
+        buf: &mut Vec<u8>,
+        mut remain_size: usize,
+    ) -> MessageReadCode {
+        MessageReadCode::Ok
+    }
+
+    async fn read_body<R: AsyncBufReadExt + Unpin>(
+        &mut self,
+        reader: &mut R,
+        buf: &mut Vec<u8>,
+        remain_size: usize,
+    ) -> MessageReadCode {
+        self._read_normal_body(reader, buf, remain_size).await
+    }
+
     pub(crate) async fn from11<R: AsyncBufReadExt + Unpin, W: AsyncWriteExt + Unpin>(
         &mut self,
         ctx: &mut ConnContext<R, W>,
@@ -256,36 +303,14 @@ impl Message {
                     }
                 }
                 ReadState::HeadersDone => match self.get_content_length() {
-                    Ok(mut remain_size) => {
+                    Ok(remain_size) => {
                         if remain_size < 1 {
                             return MessageReadCode::Ok;
                         }
-
                         if remain_size > config.max_body_size.u64() as usize {
                             return MessageReadCode::ReachMaxBodySize;
                         }
-
-                        let cap = buf.capacity();
-                        unsafe { buf.set_len(cap) }; // safety: just bytes array, no ref
-
-                        loop {
-                            let mut buf = buf.as_mut_slice();
-                            if remain_size < cap {
-                                buf = &mut buf[..remain_size];
-                            }
-                            match reader.read(buf).await {
-                                Ok(size) => {
-                                    _ = self.body.internal.as_mut().unwrap().write(&buf[..size]);
-                                    remain_size -= size;
-                                    if remain_size < 1 {
-                                        return MessageReadCode::Ok;
-                                    }
-                                }
-                                Err(_) => {
-                                    return MessageReadCode::ConnReadError;
-                                }
-                            }
-                        }
+                        return self.read_body(reader, buf, remain_size).await;
                     }
                     Err(_) => {
                         return MessageReadCode::BadContentLength;
