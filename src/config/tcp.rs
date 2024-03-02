@@ -21,8 +21,13 @@ pub struct TcpConfig {
 }
 
 impl TcpConfig {
-    pub fn autofix(&mut self) {
-        self.tls.autofix();
+    pub fn autofix(&mut self) -> Option<String> {
+        match self.tls.autofix() {
+            Some(e) => {
+                return Some(e);
+            }
+            None => {}
+        }
 
         if self.addr.is_empty() {
             self.addr = "127.0.0.1:8080".to_string();
@@ -36,5 +41,7 @@ impl TcpConfig {
         if self.buf_size.0 < 4096 {
             self.buf_size.0 = 8 * 1024;
         }
+
+        None
     }
 }

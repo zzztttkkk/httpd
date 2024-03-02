@@ -27,7 +27,7 @@ pub struct HttpConfig {
 }
 
 impl HttpConfig {
-    pub fn autofix(&mut self) {
+    pub fn autofix(&mut self) -> Option<String> {
         self.compression = std::cmp::min(11, self.compression);
 
         if !self.idle_timeout.is_zero() && self.idle_timeout.as_millis() < 10000 {
@@ -45,5 +45,7 @@ impl HttpConfig {
         if self.max_body_size.u64() < 1 {
             self.max_body_size = BytesSize(1024 * 1024 * 10); // 10MB
         }
+
+        None
     }
 }

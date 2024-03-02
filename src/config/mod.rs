@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use serde::Deserialize;
 
-use self::{http::HttpConfig, logging::LoggingConfig, service::ServiceInfo, tcp::TcpConfig};
+use self::{http::HttpConfig, logging::LoggingConfig, service::Service, tcp::TcpConfig};
 
 mod bytes_size;
 mod duration_in_millis;
@@ -25,16 +25,39 @@ pub struct Config {
     pub http: HttpConfig,
 
     #[serde(default, alias = "Services")]
-    pub services: HashMap<String, ServiceInfo>,
+    pub services: HashMap<String, Service>,
 }
 
 impl Config {
-    pub fn autofix(&mut self) {
-        self.logging.autofix();
-        self.tcp.autofix();
-        self.http.autofix();
-        for (name, service) in self.services.iter_mut() {
-            service.autofix(&name);
+    pub fn autofix(&mut self) -> Option<String> {
+        match self.logging.autofix() {
+            Some(e) => {
+                return Some(e);
+            }
+            _ => {}
         }
+
+        match self.tcp.autofix() {
+            Some(e) => {
+                return Some(e);
+            }
+            _ => {}
+        };
+
+        match self.http.autofix() {
+            Some(e) => {
+                return Some(e);
+            }
+            _ => {}
+        };
+        for (name, service) in self.services.iter_mut() {
+            match service.autofix(&name) {
+                Some(e) => {
+                    return Some(e);
+                }
+                _ => {}
+            };
+        }
+        None
     }
 }

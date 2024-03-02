@@ -1,7 +1,6 @@
 use crate::config::Config;
 use crate::conn::on_conn;
 use clap::Parser;
-use std::sync::Arc;
 use tracing::{info, trace};
 
 mod compression;
@@ -34,24 +33,143 @@ fn parse_args() -> Args {
     Args::parse()
 }
 
-#[tokio::main]
-async fn main() {
+fn load_config() -> Result<Config, String> {
     let args = parse_args();
 
     let mut config: Config = Default::default();
     if !args.file.trim().is_empty() {
-        let txt = std::fs::read_to_string(args.file.trim()).expect("read config file failed");
-        config = toml::from_str(txt.as_str()).expect("parse config file failed");
+        match std::fs::read_to_string(args.file.trim()) {
+            Err(e) => {
+                return Err(format!("read config failed, {}", e));
+            }
+            Ok(txt) => match toml::from_str::<Config>(txt.as_str()) {
+                Err(e) => {
+                    return Err(format!("parse config failed, {}", e));
+                }
+                Ok(v) => {
+                    config = v;
+                }
+            },
+        }
     }
-    config.autofix();
 
+    match config.autofix() {
+        Some(e) => Err(e),
+        None => Ok(config),
+    }
+}
+
+macro_rules! tls_loop_content {
+    ($listener:ident, $acceptor:ident, $timeout:ident, $config:ident) => {
+        loop {
+            tokio::select! {
+                result = $listener.accept() => {
+                    match result {
+                        Err(e) => {
+                            #[cfg(debug_assertions)]
+                            {
+                                trace!("accept failed, {}", e);
+                            }
+                        },
+                        Ok((stream, addr)) => {
+                            let acceptor = $acceptor.clone();
+
+                            tokio::spawn(async move {
+                                let mut handshake_result = None;
+
+                                if !$timeout.is_zero() {
+                                    tokio::select! {
+                                        r = acceptor.accept(stream) => {
+                                            handshake_result = Some(r);
+                                        }
+                                        _ =  tokio::time::sleep($timeout) => {}
+                                    }
+                                } else {
+                                    handshake_result = Some(acceptor.accept(stream).await);
+                                }
+
+                                match handshake_result {
+                                    Some(handshake_result) => {
+                                        match handshake_result {
+                                            Ok(stream) => {
+                                                let (r, w) = tokio::io::split(stream);
+                                                on_conn(r, w, addr, $config).await;
+                                            },
+                                            Err(e) => {
+                                                #[cfg(debug_assertions)]
+                                                {
+                                                    trace!("tls handshake failed, {}, {}", addr, e);
+                                                }
+                                            },
+                                        }
+                                    },
+                                    None => {
+                                        #[cfg(debug_assertions)]
+                                        {
+                                            trace!("tls handshake timeout, {}", addr);
+                                        }
+                                    },
+                                }
+                            });
+                        },
+                    }
+                },
+                _ = tokio::signal::ctrl_c() => {
+                    break;
+                }
+            }
+        }
+    };
+}
+
+#[cfg(feature = "rustls")]
+async fn tls_loop(
+    listener: &tokio::net::TcpListener,
+    tlscfg: tokio_rustls::rustls::ServerConfig,
+    config: &'static Config,
+) {
+    let acceptor = tokio_rustls::TlsAcceptor::from(std::sync::Arc::new(tlscfg));
+    let timeout = config.tcp.tls.timeout.0.clone();
+    tls_loop_content!(listener, acceptor, timeout, config);
+}
+
+#[cfg(feature = "nativetls")]
+async fn tls_loop(
+    listener: &tokio::net::TcpListener,
+    native_tls_acceptor: native_tls::TlsAcceptor,
+    config: &'static Config,
+) {
+    let acceptor = tokio_native_tls::TlsAcceptor::from(native_tls_acceptor);
+    let timeout = config.tcp.tls.timeout.0.clone();
+    tls_loop_content!(listener, acceptor, timeout, config);
+}
+
+#[tokio::main]
+async fn main() {
+    let config: Config;
+    match load_config() {
+        Ok(v) => {
+            config = v;
+        }
+        Err(e) => {
+            println!("httpd: {}", e);
+            return;
+        }
+    }
     let config: &'static Config = unsafe { std::mem::transmute(&config) }; // safety: just a global readonly value
+
     let _guards = config.logging.init();
 
     let listener = tokio::net::TcpListener::bind(config.tcp.addr.clone())
         .await
         .unwrap();
+
     let tlscfg = config.tcp.tls.load();
+    if tlscfg.is_err() {
+        println!("httpd: load tls failed, {}", tlscfg.err().unwrap());
+        return;
+    }
+    let tlscfg = tlscfg.unwrap();
 
     let mut logo = format!(
         "listening @ {}, pid {}",
@@ -88,67 +206,7 @@ async fn main() {
             }
         },
         Some(tlscfg) => {
-            let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(tlscfg));
-            let timeout = config.tcp.tls.timeout.0.clone();
-
-            loop {
-                tokio::select! {
-                    result = listener.accept() => {
-                        match result {
-                            Err(e) => {
-                                #[cfg(debug_assertions)]
-                                {
-                                    trace!("accept failed, {}", e);
-                                }
-                            },
-                            Ok((stream, addr)) => {
-                                let acceptor = acceptor.clone();
-
-                                tokio::spawn(async move {
-                                    let mut handshake_result = None;
-
-                                    if !timeout.is_zero() {
-                                        tokio::select! {
-                                            r = acceptor.accept(stream) => {
-                                                handshake_result = Some(r);
-                                            }
-                                            _ =  tokio::time::sleep(timeout) => {}
-                                        }
-                                    } else {
-                                        handshake_result = Some(acceptor.accept(stream).await);
-                                    }
-
-                                    match handshake_result {
-                                        Some(handshake_result) => {
-                                            match handshake_result {
-                                                Ok(stream) => {
-                                                    let (r, w) = tokio::io::split(stream);
-                                                    on_conn(r, w, addr, config).await;
-                                                },
-                                                Err(e) => {
-                                                    #[cfg(debug_assertions)]
-                                                    {
-                                                        trace!("tls handshake failed, {}, {}", addr, e);
-                                                    }
-                                                },
-                                            }
-                                        },
-                                        None => {
-                                            #[cfg(debug_assertions)]
-                                            {
-                                                trace!("tls handshake timeout, {}", addr);
-                                            }
-                                        },
-                                    }
-                                });
-                            },
-                        }
-                    },
-                    _ = tokio::signal::ctrl_c() => {
-                        break;
-                    }
-                }
-            }
+            tls_loop(&listener, tlscfg, config).await;
         }
     }
 

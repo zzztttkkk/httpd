@@ -3,19 +3,33 @@ name = "httpd"
 version = "0.0.1"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[features]
+default = ["nativetls"]
+rustls = ["dep:tokio-rustls", "dep:rustls-pemfile"]
+nativetls = ["dep:native-tls", "dep:tokio-native-tls"]
 
 [dependencies]
+clap = { version = "4.5.1", features = ["derive"] }
 tokio = { version = " 1.36.0", features = ["full"] }
 bytebuffer = "2.2.0"
-chrono = "0.4.34"
+
+# compression
 flate2 = "1.0.28"
 brotli = "3.4.0"
-clap = { version = "4.5.1", features = ["derive"] }
-toml = "0.8.10"
+
+# config
+toml = { version = "0.8.10" }
 serde = { version = "1.0.197", features = ["derive"] }
-tokio-rustls = "0.25.0"
-rustls-pemfile = "2.1.0"
+
+# --ssl
+# rustls
+tokio-rustls = { version = "0.25.0", optional = true }
+rustls-pemfile = { version = "2.1.0", optional = true }
+# native-tls
+tokio-native-tls = { version = "0.3.1", optional = true }
+native-tls = { version = "0.2.11", optional = true }
+
+# loggging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json"] }
 tracing-appender = "0.2.3"

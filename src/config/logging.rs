@@ -24,24 +24,27 @@ pub struct LoggingConfig {
 struct EqualLevelFilter(tracing::Level);
 
 impl<S> tracing_subscriber::layer::Filter<S> for EqualLevelFilter {
+    #[inline]
     fn enabled(
         &self,
         meta: &tracing_core::Metadata<'_>,
         _: &tracing_subscriber::layer::Context<'_, S>,
     ) -> bool {
-        meta.level() == &self.0
+        *meta.level() == self.0
     }
 }
 
 impl LoggingConfig {
-    pub(crate) fn autofix(&mut self) {
+    pub(crate) fn autofix(&mut self) -> Option<String> {
         if self.disable {
-            return;
+            return None;
         }
 
         if self.directory.is_empty() {
             self.directory = "./log".to_string();
         }
+
+        None
     }
 
     pub fn init(&self) -> Option<Vec<tracing_appender::non_blocking::WorkerGuard>> {
@@ -51,6 +54,7 @@ impl LoggingConfig {
 
         if self.debug {
             let subscriber = tracing_subscriber::fmt()
+                .with_ansi(true)
                 .with_max_level(tracing::Level::TRACE)
                 .with_file(true)
                 .with_line_number(true)
@@ -93,13 +97,13 @@ impl LoggingConfig {
                 appender =
                     tracing_appender::rolling::never(self.directory.to_string(), name.as_str());
             }
+
             let (appender, guard) = tracing_appender::non_blocking(appender);
             guards.push(guard);
 
             let layer = tracing_subscriber::fmt::layer()
                 .json()
                 .with_writer(appender)
-                // .with_writer(std::io::stdout)
                 .with_filter(EqualLevelFilter(level.clone()))
                 .boxed();
 

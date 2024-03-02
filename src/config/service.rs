@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::format};
 
 use serde::Deserialize;
 
@@ -6,7 +6,7 @@ use serde::Deserialize;
 pub struct ProxyRule {}
 
 #[derive(Deserialize, Clone, Debug)]
-pub enum ServiceInfo {
+pub enum Service {
     #[serde(alias = "none")]
     None,
     #[serde(alias = "helloworld")]
@@ -41,12 +41,12 @@ pub enum ServiceInfo {
     },
 }
 
-impl ServiceInfo {
-    pub fn autofix(&mut self, name: &str) {
+impl Service {
+    pub fn autofix(&mut self, name: &str) -> Option<String> {
         match self {
-            ServiceInfo::FileSystem { root } => {
+            Service::FileSystem { root } => {
                 if root.is_empty() {
-                    panic!("fs service `{}` get an empty root path", name);
+                    return Some(format!("fs service `{}` get an empty root path", name));
                 }
 
                 if !std::path::Path::new(root).exists() {
@@ -55,18 +55,19 @@ impl ServiceInfo {
                         name, root
                     );
                 }
+                None
             }
-            ServiceInfo::Forward { target_addr, rules } => {}
-            ServiceInfo::Upstream {
+            Service::Forward { target_addr, rules } => None,
+            Service::Upstream {
                 target_addrs,
                 rules,
-            } => {}
-            _ => {}
+            } => None,
+            _ => None,
         }
     }
 }
 
-impl Default for ServiceInfo {
+impl Default for Service {
     fn default() -> Self {
         Self::None
     }
