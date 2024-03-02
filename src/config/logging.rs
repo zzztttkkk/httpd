@@ -1,6 +1,5 @@
 use serde::Deserialize;
 use std::str::FromStr;
-use tracing::subscriber;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, Layer};
 
 #[derive(Deserialize, Clone, Default, Debug)]

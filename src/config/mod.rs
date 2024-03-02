@@ -4,14 +4,14 @@ use serde::Deserialize;
 
 use self::{http::HttpConfig, logging::LoggingConfig, service::Service, tcp::TcpConfig};
 
-mod bytes_size;
-mod duration_in_millis;
-mod http;
-mod logging;
-mod service;
-mod split_uint;
-mod tcp;
-mod tls;
+pub mod bytes_size;
+pub mod duration_in_millis;
+pub mod http;
+pub mod logging;
+pub mod service;
+pub mod split_uint;
+pub mod tcp;
+pub mod tls;
 
 #[derive(Deserialize, Clone, Default, Debug)]
 pub struct Config {

@@ -12,7 +12,7 @@ pub(crate) async fn serve<
     let mut response = Message::default();
 
     loop {
-        match (&mut (request.msg)).from11(ctx).await {
+        match (&mut (request.msg)).read_headers(ctx).await {
             crate::message::MessageReadCode::Ok => {
                 on_request(ctx, &mut request, &mut response).await;
                 break;

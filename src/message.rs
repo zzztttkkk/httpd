@@ -2,7 +2,9 @@ use std::io::Write;
 
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 
-use crate::compression::CompressionImpl;
+use crate::compression::WriteCompressionImpl;
+use crate::config::http::HttpConfig;
+use crate::uitls::header;
 use crate::{ctx::ConnContext, uitls::multi_map::MultiMap};
 
 enum ReadState {
@@ -15,7 +17,7 @@ enum ReadState {
 
 pub(crate) struct MessageBody {
     pub(crate) internal: Option<Box<bytebuffer::ByteBuffer>>,
-    pub(crate) cw: Option<Box<dyn CompressionImpl<Box<bytebuffer::ByteBuffer>> + Send>>,
+    pub(crate) cw: Option<Box<dyn WriteCompressionImpl<Box<bytebuffer::ByteBuffer>> + Send>>,
 }
 
 impl Default for MessageBody {
@@ -47,7 +49,7 @@ pub(crate) enum CompressionType {
 }
 
 impl MessageBody {
-    pub(crate) fn enable_compression(mut self, ct: CompressionType, level: u32) {
+    pub(crate) fn compression(mut self, ct: CompressionType, level: u32) {
         let buf = self.internal.unwrap();
         self.internal = None;
 
@@ -73,6 +75,23 @@ impl MessageBody {
             }
         }
     }
+
+    pub(crate) fn decompression(mut self, ct: CompressionType) {
+        let buf = self.internal.unwrap();
+        self.internal = None;
+
+        match ct {
+            CompressionType::Brotil => {
+                self.cw = Some(Box::new(brotli::DecompressorWriter::new(buf, 4096)));
+            }
+            CompressionType::Deflate => {
+                self.cw = Some(Box::new(flate2::write::DeflateDecoder::new(buf)));
+            }
+            CompressionType::Gzip => {
+                self.cw = Some(Box::new(flate2::write::GzDecoder::new(buf)));
+            }
+        }
+    }
 }
 
 #[derive(Default)]
@@ -90,9 +109,97 @@ pub(crate) enum MessageReadCode {
     ReachMaxBodySize,
     BadContentLength,
     ReachMaxHeadersCount,
+    BadChunkSize,
 }
 
 const MAX_HEADER_NAME_LENGTH: usize = 256;
+
+macro_rules! read_const_length_body_impl {
+    ($self:ident, $reader:ident, $buf:ident, $remain_size:ident, $write:ident ) => {
+        if $remain_size < 1 {
+            return MessageReadCode::Ok;
+        }
+
+        let bufcap = $buf.capacity();
+        loop {
+            let mut _buf = $buf.as_mut_slice();
+            if $remain_size < bufcap {
+                _buf = &mut _buf[..$remain_size];
+            }
+            match $reader.read(_buf).await {
+                Ok(size) => {
+                    $self.$write(&_buf[..size]);
+                    $remain_size -= size;
+                    if $remain_size < 1 {
+                        return MessageReadCode::Ok;
+                    }
+                }
+                Err(_) => {
+                    return MessageReadCode::ConnReadError;
+                }
+            }
+        }
+    };
+}
+
+macro_rules! read_chunked_body_impl {
+    ($self:ident, $reader:ident, $buf:ident, $max_body_size:ident, $write:ident) => {
+        let bufcap = $buf.capacity();
+        let mut lenline = String::with_capacity(128);
+        let mut remain_size: usize;
+        let mut read_size: usize = 0;
+        loop {
+            lenline.clear();
+            match $reader.take(128).read_line(&mut lenline).await {
+                Ok(_) => match lenline.as_str().trim().parse::<usize>() {
+                    Ok(num) => {
+                        remain_size = num;
+                    }
+                    Err(_) => {
+                        return MessageReadCode::BadChunkSize;
+                    }
+                },
+                Err(_) => {
+                    return MessageReadCode::ConnReadError;
+                }
+            }
+
+            read_size += remain_size;
+            if read_size > $max_body_size {
+                return MessageReadCode::ReachMaxBodySize;
+            }
+
+            loop {
+                if remain_size < 1 {
+                    break;
+                }
+
+                let mut _buf = $buf.as_mut_slice();
+                if remain_size < bufcap {
+                    _buf = &mut _buf[..remain_size];
+                }
+
+                match $reader.read(_buf).await {
+                    Ok(size) => {
+                        $self.$write(&_buf[..size]);
+                        remain_size -= size;
+                        if remain_size < 1 {
+                            break;
+                        }
+                    }
+                    Err(_) => {
+                        return MessageReadCode::ConnReadError;
+                    }
+                }
+            }
+
+            match $reader.take(2).read_line(&mut lenline).await {
+                Ok(_) => return MessageReadCode::Ok,
+                Err(_) => return MessageReadCode::BadDatagram,
+            }
+        }
+    };
+}
 
 impl Message {
     fn get_content_length(&self) -> Result<usize, ()> {
@@ -105,54 +212,77 @@ impl Message {
         }
     }
 
-    async fn _read_normal_body<R: AsyncBufReadExt + Unpin>(
+    fn write_raw(&mut self, v: &[u8]) {
+        _ = self.body.internal.as_mut().unwrap().write(v);
+    }
+
+    fn write_compression(&mut self, v: &[u8]) {
+        _ = self.body.write(v);
+    }
+
+    async fn read_const_length_body<R: AsyncBufReadExt + Unpin>(
         &mut self,
         reader: &mut R,
         buf: &mut Vec<u8>,
         mut remain_size: usize,
+    ) -> MessageReadCode {
+        read_const_length_body_impl!(self, reader, buf, remain_size, write_raw);
+    }
+
+    async fn read_const_length_body_decompression<R: AsyncBufReadExt + Unpin>(
+        &mut self,
+        reader: &mut R,
+        buf: &mut Vec<u8>,
+        mut remain_size: usize,
+    ) -> MessageReadCode {
+        read_const_length_body_impl!(self, reader, buf, remain_size, write_compression);
+    }
+
+    async fn read_chunked_body<R: AsyncBufReadExt + Unpin>(
+        &mut self,
+        reader: &mut R,
+        buf: &mut Vec<u8>,
+        max_body_size: usize,
+    ) -> MessageReadCode {
+        read_chunked_body_impl!(self, reader, buf, max_body_size, write_raw);
+    }
+
+    async fn read_chunked_body_decompression<R: AsyncBufReadExt + Unpin>(
+        &mut self,
+        reader: &mut R,
+        buf: &mut Vec<u8>,
+        max_body_size: usize,
+    ) -> MessageReadCode {
+        read_chunked_body_impl!(self, reader, buf, max_body_size, write_compression);
+    }
+
+    async fn read_body_normal<R: AsyncBufReadExt + Unpin>(
+        &mut self,
+        reader: &mut R,
+        buf: &mut Vec<u8>,
+        config: &'static HttpConfig,
     ) -> MessageReadCode {
         let cap = buf.capacity();
         unsafe { buf.set_len(cap) }; // safety: just bytes array, no ref
 
-        loop {
-            let mut buf = buf.as_mut_slice();
-            if remain_size < cap {
-                buf = &mut buf[..remain_size];
-            }
-            match reader.read(buf).await {
-                Ok(size) => {
-                    _ = self.body.internal.as_mut().unwrap().write(&buf[..size]);
-                    remain_size -= size;
-                    if remain_size < 1 {
-                        return MessageReadCode::Ok;
-                    }
+        if header::contains(self.headers.getall("transfer-encoding"), "chunked") {
+            return self
+                .read_chunked_body(reader, buf, config.max_body_size.0)
+                .await;
+        }
+
+        match self.get_content_length() {
+            Ok(remain_size) => {
+                if remain_size > config.max_body_size.0 {
+                    return MessageReadCode::ReachMaxBodySize;
                 }
-                Err(_) => {
-                    return MessageReadCode::ConnReadError;
-                }
+                self.read_const_length_body(reader, buf, remain_size).await
             }
+            Err(_) => MessageReadCode::BadContentLength,
         }
     }
 
-    async fn _read_chunked_body<R: AsyncBufReadExt + Unpin>(
-        &mut self,
-        reader: &mut R,
-        buf: &mut Vec<u8>,
-        mut remain_size: usize,
-    ) -> MessageReadCode {
-        MessageReadCode::Ok
-    }
-
-    async fn read_body<R: AsyncBufReadExt + Unpin>(
-        &mut self,
-        reader: &mut R,
-        buf: &mut Vec<u8>,
-        remain_size: usize,
-    ) -> MessageReadCode {
-        self._read_normal_body(reader, buf, remain_size).await
-    }
-
-    pub(crate) async fn from11<R: AsyncBufReadExt + Unpin, W: AsyncWriteExt + Unpin>(
+    pub(crate) async fn read_headers<R: AsyncBufReadExt + Unpin, W: AsyncWriteExt + Unpin>(
         &mut self,
         ctx: &mut ConnContext<R, W>,
     ) -> MessageReadCode {
@@ -302,20 +432,9 @@ impl Message {
                         }
                     }
                 }
-                ReadState::HeadersDone => match self.get_content_length() {
-                    Ok(remain_size) => {
-                        if remain_size < 1 {
-                            return MessageReadCode::Ok;
-                        }
-                        if remain_size > config.max_body_size.u64() as usize {
-                            return MessageReadCode::ReachMaxBodySize;
-                        }
-                        return self.read_body(reader, buf, remain_size).await;
-                    }
-                    Err(_) => {
-                        return MessageReadCode::BadContentLength;
-                    }
-                },
+                ReadState::HeadersDone => {
+                    return MessageReadCode::Ok;
+                }
             }
         }
     }
