@@ -21,6 +21,10 @@ impl TlsConfig {
     }
 
     pub(crate) fn load(&self) -> anyhow::Result<Option<boring::ssl::SslAcceptor>> {
+        if self.cert.is_empty() || self.key.is_empty() {
+            return Ok(None);
+        }
+
         let server = boring::ssl::SslMethod::tls_server();
         let mut builder = anyhow::result(boring::ssl::SslAcceptor::mozilla_modern(server))?;
         _ = anyhow::result(
