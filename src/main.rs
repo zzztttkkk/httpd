@@ -75,14 +75,16 @@ macro_rules! tls_loop_content {
                             let acceptor = $acceptor.clone();
 
                             tokio::spawn(async move {
-                                let mut handshake_result = None;
-
+                                let handshake_result;
                                 if !$timeout.is_zero() {
-                                    tokio::select! {
-                                        r = acceptor.accept(stream) => {
+                                    println!("============================");
+                                    match tokio::time::timeout($timeout, acceptor.accept(stream)).await {
+                                        Ok(r) => {
                                             handshake_result = Some(r);
                                         }
-                                        _ =  tokio::time::sleep($timeout) => {}
+                                        Err(_) => {
+                                            handshake_result = None;
+                                        }
                                     }
                                 } else {
                                     handshake_result = Some(acceptor.accept(stream).await);
@@ -156,7 +158,9 @@ async fn main() {
             return;
         }
     }
-    let config: &'static Config = unsafe { std::mem::transmute(&config) }; // safety: just a global readonly value
+    let config = Box::new(config);
+
+    let config: &'static Config = Box::leak(config);
 
     let _guards = config.logging.init();
 
