@@ -61,20 +61,10 @@ fn load_config() -> Result<Config, String> {
 
 async fn tls_loop(
     listener: &tokio::net::TcpListener,
-    #[cfg(feature = "nativetls")] tlscfg: native_tls::TlsAcceptor,
-    #[cfg(feature = "rustls")] tlscfg: tokio_rustls::rustls::ServerConfig,
+    tlscfg: boring::ssl::SslAcceptor,
     config: &'static Config,
 ) {
-    let acceptor;
-    #[cfg(feature = "nativetls")]
-    {
-        acceptor = tokio_native_tls::TlsAcceptor::from(tlscfg);
-    }
-    #[cfg(feature = "rustls")]
-    {
-        acceptor = tokio_rustls::TlsAcceptor::from(std::sync::Arc::new(tlscfg));
-    }
-
+    let acceptor = std::sync::Arc::new(tlscfg);
     let timeout = config.tcp.tls.timeout.0.clone();
 
     loop {
@@ -92,17 +82,17 @@ async fn tls_loop(
                         tokio::spawn(async move {
                             let handshake_result;
                             if !timeout.is_zero() {
-                                println!("============================: {:?}", timeout);
-                                match tokio::time::timeout(timeout, acceptor.accept(stream)).await {
+                                match tokio::time::timeout(timeout, tokio_boring::accept(&acceptor, stream)).await {
                                     Ok(r) => {
                                         handshake_result = Some(r);
-                                    }
+                                    },
                                     Err(_) => {
                                         handshake_result = None;
-                                    }
+                                    },
                                 }
-                            } else {
-                                handshake_result = Some(acceptor.accept(stream).await);
+
+                            }else{
+                                handshake_result = Some(tokio_boring::accept(&acceptor, stream).await);
                             }
 
                             match handshake_result {
@@ -138,24 +128,7 @@ async fn tls_loop(
     }
 }
 
-#[tokio::main]
-async fn main() {
-    let config: Config;
-    match load_config() {
-        Ok(v) => {
-            config = v;
-        }
-        Err(e) => {
-            println!("httpd: {}", e);
-            return;
-        }
-    }
-    let config = Box::new(config);
-
-    let config: &'static Config = Box::leak(config);
-
-    let _guards = config.logging.init();
-
+async fn run(config: &'static Config) {
     let listener = tokio::net::TcpListener::bind(config.tcp.addr.clone())
         .await
         .unwrap();
@@ -205,6 +178,40 @@ async fn main() {
             tls_loop(&listener, tlscfg, config).await;
         }
     }
+}
 
-    info!("gracefully shutdown");
+fn main() {
+    let config: Config;
+    match load_config() {
+        Ok(v) => {
+            config = v;
+        }
+        Err(e) => {
+            println!("httpd: {}", e);
+            return;
+        }
+    }
+    let config = Box::new(config);
+
+    let config: &'static Config = Box::leak(config);
+
+    let _guards = config.logging.init();
+
+    let mut builder = tokio::runtime::Builder::new_multi_thread();
+    let mut builder = builder.enable_all();
+    if config.runtime.worker_threads > 0 {
+        builder = builder.worker_threads(config.runtime.worker_threads as usize);
+    }
+
+    match builder.build() {
+        Ok(runtime) => {
+            runtime.block_on(async {
+                run(config).await;
+            });
+            info!("gracefully shutdown");
+        }
+        Err(e) => {
+            tracing::error!("launch tokio runtime failed, {}", e);
+        }
+    }
 }

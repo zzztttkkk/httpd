@@ -20,52 +20,16 @@ impl TlsConfig {
         None
     }
 
-    #[cfg(feature = "rustls")]
-    pub(crate) fn load(&self) -> anyhow::Result<Option<tokio_rustls::rustls::ServerConfig>> {
-        if self.cert.is_empty() && self.key.is_empty() {
-            return Ok(None);
-        }
-
-        let mut certs = vec![];
-        for v in rustls_pemfile::certs(&mut std::io::BufReader::new(anyhow::result(
-            std::fs::File::open(&self.cert),
-        )?)) {
-            certs.push(anyhow::result(v)?);
-        }
-
-        let key = anyhow::result(rustls_pemfile::private_key(&mut std::io::BufReader::new(
-            anyhow::result(std::fs::File::open(&self.key))?,
-        )))?;
-        let key = anyhow::option(key, "none key")?;
-
-        let cfg = anyhow::result(
-            tokio_rustls::rustls::ServerConfig::builder()
-                .with_no_client_auth()
-                .with_single_cert(certs, Into::into(key)),
-        )?;
-        Ok(Some(cfg))
-    }
-
-    #[cfg(feature = "nativetls")]
-    pub(crate) fn load(&self) -> anyhow::Result<Option<native_tls::TlsAcceptor>> {
-        use std::io::Read;
-
-        if self.cert.is_empty() && self.key.is_empty() {
-            return Ok(None);
-        }
-
-        let mut certbytes = vec![];
+    pub(crate) fn load(&self) -> anyhow::Result<Option<boring::ssl::SslAcceptor>> {
+        let server = boring::ssl::SslMethod::tls_server();
+        let mut builder = anyhow::result(boring::ssl::SslAcceptor::mozilla_modern(server))?;
         _ = anyhow::result(
-            anyhow::result(std::fs::File::open(&self.cert))?.read_to_end(&mut certbytes),
+            builder.set_certificate_file(self.cert.as_str(), boring::ssl::SslFiletype::PEM),
         )?;
-
-        let mut keybytes = vec![];
         _ = anyhow::result(
-            anyhow::result(std::fs::File::open(&self.key))?.read_to_end(&mut keybytes),
+            builder.set_private_key_file(self.key.as_str(), boring::ssl::SslFiletype::PEM),
         )?;
-
-        let ident = anyhow::result(native_tls::Identity::from_pkcs8(&certbytes, &keybytes))?;
-        let acceptor = anyhow::result(native_tls::TlsAcceptor::builder(ident).build())?;
-        Ok(Some(acceptor))
+        builder.set_verify(boring::ssl::SslVerifyMode::PEER);
+        Ok(Some(builder.build()))
     }
 }
