@@ -11,7 +11,6 @@ clap = { version = "4.5.1", features = ["derive"] }
 tokio = { version = " 1.36.0", features = ["full"] }
 bytebuffer = "2.2.0"
 
-
 # compression
 flate2 = "1.0.28"
 brotli = "3.4.0"
@@ -21,7 +20,7 @@ toml = { version = "0.8.10" }
 serde = { version = "1.0.197", features = ["derive"] }
 glob = { version = "0.3.1" }
 
-# --ssl
+# ssl
 tokio-boring = { version = "4.5.0" }
 boring = { version = "4.5.0" }
 

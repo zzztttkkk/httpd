@@ -201,6 +201,11 @@ macro_rules! read_chunked_body_impl {
     };
 }
 
+#[inline]
+fn is_latin_1_graphic(b: u8) -> bool {
+    matches!(b, b' '..=b'~' | b'\xa0'..=b'\xff')
+}
+
 impl Message {
     fn get_content_length(&self) -> Result<usize, ()> {
         match self.headers.get("content-length") {
@@ -291,10 +296,10 @@ impl Message {
         let buf = &mut ctx.buf;
         let config = &(ctx.config.http);
 
-        macro_rules! ensure_ascii_graphic {
+        macro_rules! ensure_lantin_1 {
             ($bytes:expr) => {
-                for b in ($bytes).iter() {
-                    if !b.is_ascii_graphic() && *b != b' ' {
+                for b in ($bytes) {
+                    if !is_latin_1_graphic(*b) {
                         return MessageReadCode::BadDatagram;
                     }
                 }
@@ -314,7 +319,7 @@ impl Message {
                                 return MessageReadCode::BadDatagram;
                             }
                             unsafe { dest.set_len(size - 1) }; // safety: trim last space and len check in front
-                            ensure_ascii_graphic!(dest);
+                            ensure_lantin_1!(dest);
                             state = ReadState::FirstLine0;
                             continue;
                         }
@@ -335,7 +340,7 @@ impl Message {
                                 return MessageReadCode::BadDatagram;
                             }
                             unsafe { dest.set_len(size - 1) }; // safety: trim last space and len check in front
-                            ensure_ascii_graphic!(dest);
+                            ensure_lantin_1!(dest);
                             state = ReadState::FirstLine1;
                             continue;
                         }
@@ -352,7 +357,7 @@ impl Message {
                             }
                             let bytes = unsafe { (&mut self.firstline.2).as_mut_vec() }; // safety: trim `\r\n` and len check in front
                             unsafe { bytes.set_len(size - 2) };
-                            ensure_ascii_graphic!(bytes);
+                            ensure_lantin_1!(bytes);
                             state = ReadState::FirstLine2;
                             continue;
                         }
@@ -386,7 +391,7 @@ impl Message {
                                 keyidx = 0;
                                 for idx in 0..buf.len() {
                                     let c = buf[idx];
-                                    if !c.is_ascii_graphic() {
+                                    if !is_latin_1_graphic(c) {
                                         return MessageReadCode::BadDatagram;
                                     }
 
@@ -402,7 +407,7 @@ impl Message {
                                         }
 
                                         // safety: not calling `std::str::from_utf8`, because i only want ascii chars in the header value
-                                        ensure_ascii_graphic!(&buf[(idx + 1)..]);
+                                        ensure_lantin_1!(&buf[(idx + 1)..]);
                                         let value: &str = unsafe {
                                             std::str::from_utf8_unchecked(&buf[(idx + 1)..])
                                         }
