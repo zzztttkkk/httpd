@@ -1,7 +1,9 @@
 use crate::config::Config;
 use crate::conn::on_conn;
 use clap::Parser;
+use config::service::ServiceConfig;
 use tracing::{info, trace};
+use uitls::anyhow;
 
 mod compression;
 mod config;
@@ -23,46 +25,31 @@ pub struct Args {
     pub file: String,
 }
 
-#[cfg(debug_assertions)]
-fn parse_args() -> Args {
-    Args::parse_from(vec!["httpd", "./httpd.toml"])
-}
+fn load_config() -> anyhow::Result<Config> {
+    let args;
+    #[cfg(debug_assertions)]
+    {
+        args = Args::parse_from(vec!["httpd", "./httpd.toml"]);
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        args = Args::parse();
+    }
 
-#[cfg(not(debug_assertions))]
-fn parse_args() -> Args {
-    Args::parse()
-}
-
-fn load_config() -> Result<Config, String> {
-    let args = parse_args();
-
-    let mut config: Config = Default::default();
     if !args.file.trim().is_empty() {
-        match std::fs::read_to_string(args.file.trim()) {
-            Err(e) => {
-                return Err(format!("read config failed, {}", e));
-            }
-            Ok(txt) => match toml::from_str::<Config>(txt.as_str()) {
-                Err(e) => {
-                    return Err(format!("parse config failed, {}", e));
-                }
-                Ok(v) => {
-                    config = v;
-                }
-            },
-        }
+        return Config::load(&args.file);
     }
 
-    match config.autofix() {
-        Some(e) => Err(e),
-        None => Ok(config),
-    }
+    let mut config = Config::default();
+    config.logging.debug = Some(true);
+    config.autofix()?;
+    Ok(config)
 }
 
 async fn tls_loop(
     listener: &tokio::net::TcpListener,
     tlscfg: boring::ssl::SslAcceptor,
-    config: &'static Config,
+    config: &'static ServiceConfig,
 ) {
     let acceptor = std::sync::Arc::new(tlscfg);
     let timeout = config.tcp.tls.timeout.0.clone();
@@ -128,7 +115,7 @@ async fn tls_loop(
     }
 }
 
-async fn run(config: &'static Config) {
+async fn run(config: &'static ServiceConfig) {
     let listener = tokio::net::TcpListener::bind(config.tcp.addr.clone())
         .await
         .unwrap();
@@ -203,10 +190,20 @@ fn main() {
         builder = builder.worker_threads(config.runtime.worker_threads as usize);
     }
 
+    if config.services.len() < 1 {
+        info!("empty services");
+        return;
+    }
+
     match builder.build() {
         Ok(runtime) => {
             runtime.block_on(async {
-                run(config).await;
+                for service in config.services.values() {
+                    tokio::spawn(async move {
+                        let _guards = service.logging.init();
+                        run(service).await;
+                    });
+                }
             });
             info!("gracefully shutdown");
         }

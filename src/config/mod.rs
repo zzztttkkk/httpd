@@ -1,9 +1,11 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::format};
 
 use serde::Deserialize;
 
+use crate::uitls::anyhow;
+
 use self::{
-    http::HttpConfig, logging::LoggingConfig, runtime::RuntimeConfig, service::Service,
+    http::HttpConfig, logging::LoggingConfig, runtime::RuntimeConfig, service::ServiceConfig,
     tcp::TcpConfig,
 };
 
@@ -11,7 +13,7 @@ pub mod bytes_size;
 pub mod duration_in_millis;
 pub mod http;
 pub mod logging;
-mod runtime;
+pub mod runtime;
 pub mod service;
 pub mod split_uint;
 pub mod tcp;
@@ -31,47 +33,71 @@ pub struct Config {
     #[serde(default, alias = "Http")]
     pub http: HttpConfig,
 
+    #[serde(default, alias = "Include")]
+    pub include: String,
+
     #[serde(default, alias = "Services")]
-    pub services: HashMap<String, Service>,
+    pub services: HashMap<String, ServiceConfig>,
 }
 
 impl Config {
-    pub fn autofix(&mut self) -> Option<String> {
-        match self.runtime.autofix() {
-            Some(e) => {
-                return Some(e);
-            }
-            _ => {}
-        }
-
-        match self.logging.autofix() {
-            Some(e) => {
-                return Some(e);
-            }
-            _ => {}
-        }
-
-        match self.tcp.autofix() {
-            Some(e) => {
-                return Some(e);
-            }
-            _ => {}
-        };
-
-        match self.http.autofix() {
-            Some(e) => {
-                return Some(e);
-            }
-            _ => {}
-        };
-        for (name, service) in self.services.iter_mut() {
-            match service.autofix(&name) {
-                Some(e) => {
-                    return Some(e);
+    pub fn load(fp: &str) -> anyhow::Result<Self> {
+        let txt = anyhow::result(std::fs::read_to_string(fp))?;
+        let mut config = anyhow::result(toml::from_str::<Self>(txt.as_str()))?;
+        if !config.include.is_empty() {
+            for entry in anyhow::result(glob::glob(config.include.as_str()))? {
+                match entry {
+                    Ok(entry) => {
+                        if entry.is_file() {
+                            let txt = anyhow::result(std::fs::read_to_string(&entry))?;
+                            match toml::from_str::<ServiceConfig>(&txt) {
+                                Ok(mut service) => {
+                                    service.name = format!("{:?}:{}", &entry, &service.name);
+                                    if config.services.contains_key(&service.name) {
+                                        return Err(anyhow::Error(format!(
+                                            "service name `{}` is exists",
+                                            &service.name
+                                        )));
+                                    }
+                                    config.services.insert(service.name.clone(), service);
+                                }
+                                Err(e) => {
+                                    return Err(anyhow::Error(format!(
+                                        "load service failed, from `{:?}`, {:?}",
+                                        &entry, e
+                                    )));
+                                }
+                            }
+                        }
+                    }
+                    Err(_) => {}
                 }
-                _ => {}
-            };
+            }
         }
-        None
+
+        config.autofix()?;
+
+        Ok(config)
+    }
+
+    pub fn autofix(&mut self) -> anyhow::Result<()> {
+        self.runtime.autofix()?;
+
+        self.logging.autofix("", None)?;
+
+        self.tcp.autofix(None)?;
+
+        self.http.autofix(None)?;
+
+        for (name, service) in self.services.iter_mut() {
+            let name = name.to_string();
+            let name = name.trim();
+            if name.is_empty() {
+                return Err(anyhow::Error(format!("empty service name")));
+            }
+            service.autofix(name, &self.logging, &self.tcp, &self.http)?
+        }
+
+        Ok(())
     }
 }

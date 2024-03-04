@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 
-use crate::config::Config;
+use crate::config::service::ServiceConfig;
 
 pub(crate) struct ConnContext<
     R: tokio::io::AsyncBufReadExt + Unpin,
@@ -10,11 +10,11 @@ pub(crate) struct ConnContext<
     pub(crate) writer: W,
     pub(crate) buf: Vec<u8>,
     pub(crate) addr: SocketAddr,
-    pub(crate) config: &'static Config,
+    pub(crate) config: &'static ServiceConfig,
 }
 
 impl<R: tokio::io::AsyncBufReadExt + Unpin, W: tokio::io::AsyncWriteExt + Unpin> ConnContext<R, W> {
-    pub(crate) fn new(r: R, w: W, addr: SocketAddr, config: &'static Config) -> Self {
+    pub(crate) fn new(r: R, w: W, addr: SocketAddr, config: &'static ServiceConfig) -> Self {
         Self {
             reader: r,
             writer: w,

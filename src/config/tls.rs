@@ -16,8 +16,20 @@ pub(crate) struct TlsConfig {
 }
 
 impl TlsConfig {
-    pub(crate) fn autofix(&mut self) -> Option<String> {
-        None
+    pub(crate) fn autofix(&mut self, root: Option<&Self>) -> anyhow::Result<()> {
+        match root {
+            Some(root) => {
+                if self.timeout.is_zero() {
+                    self.timeout = root.timeout.clone();
+                }
+            }
+            None => {}
+        }
+
+        if self.timeout.is_zero() {
+            self.timeout = DurationInMillis(std::time::Duration::from_secs(15));
+        }
+        Ok(())
     }
 
     pub(crate) fn load(&self) -> anyhow::Result<Option<boring::ssl::SslAcceptor>> {

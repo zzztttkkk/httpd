@@ -427,6 +427,7 @@ dependencies = [
  "bytebuffer",
  "clap",
  "flate2",
+ "glob",
  "serde",
  "tokio",
  "tokio-boring",

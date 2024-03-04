@@ -1,5 +1,7 @@
 use serde::Deserialize;
 
+use crate::uitls::anyhow;
+
 use super::duration_in_millis::DurationInMillis;
 
 #[derive(Deserialize, Clone, Default, Debug)]
@@ -12,7 +14,7 @@ pub struct RuntimeConfig {
 }
 
 impl RuntimeConfig {
-    pub fn autofix(&mut self) -> Option<String> {
-        None
+    pub fn autofix(&mut self) -> anyhow::Result<()> {
+        Ok(())
     }
 }

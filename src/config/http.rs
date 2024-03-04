@@ -1,5 +1,7 @@
 use serde::Deserialize;
 
+use crate::uitls::anyhow;
+
 use super::{bytes_size::BytesSize, duration_in_millis::DurationInMillis};
 
 #[derive(Deserialize, Clone, Default, Debug)]
@@ -27,12 +29,13 @@ pub struct HttpConfig {
 }
 
 impl HttpConfig {
-    pub fn autofix(&mut self) -> Option<String> {
+    pub fn autofix(&mut self, root: Option<&Self>) -> anyhow::Result<()> {
         self.compression = std::cmp::min(11, self.compression);
 
         if !self.idle_timeout.is_zero() && self.idle_timeout.as_millis() < 10000 {
             self.idle_timeout = DurationInMillis(std::time::Duration::from_millis(10000));
         }
+
         if self.max_url_size.u64() < 1 {
             self.max_url_size = BytesSize(8 * 1024); // 8KB
         }
@@ -46,6 +49,6 @@ impl HttpConfig {
             self.max_body_size = BytesSize(1024 * 1024 * 10); // 10MB
         }
 
-        None
+        Ok(())
     }
 }

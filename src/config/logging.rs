@@ -2,22 +2,24 @@ use serde::Deserialize;
 use std::str::FromStr;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, Layer};
 
+use crate::uitls::anyhow;
+
 #[derive(Deserialize, Clone, Default, Debug)]
 pub struct LoggingConfig {
     #[serde(default, alias = "Disable")]
-    disable: bool,
+    pub disable: Option<bool>,
 
     #[serde(default, alias = "Debug")]
-    debug: bool,
+    pub debug: Option<bool>,
 
     #[serde(default, alias = "Level")]
-    level: String,
+    pub level: String,
 
     #[serde(default, alias = "Directory")]
-    directory: String,
+    pub directory: String,
 
     #[serde(default, alias = "DailyRoration", alias = "Daily", alias = "daily")]
-    daily_roration: bool,
+    pub daily_roration: bool,
 }
 
 struct EqualLevelFilter(tracing::Level);
@@ -34,24 +36,20 @@ impl<S> tracing_subscriber::layer::Filter<S> for EqualLevelFilter {
 }
 
 impl LoggingConfig {
-    pub(crate) fn autofix(&mut self) -> Option<String> {
-        if self.disable {
-            return None;
-        }
-
+    pub(crate) fn autofix(&mut self, name: &str, root: Option<&Self>) -> anyhow::Result<()> {
         if self.directory.is_empty() {
             self.directory = "./log".to_string();
         }
 
-        None
+        Ok(())
     }
 
     pub fn init(&self) -> Option<Vec<tracing_appender::non_blocking::WorkerGuard>> {
-        if self.disable {
+        if self.disable.is_some() && *self.disable.as_ref().unwrap() {
             return None;
         }
 
-        if self.debug {
+        if self.debug.is_some() && *self.debug.as_ref().unwrap() {
             let subscriber = tracing_subscriber::fmt()
                 .with_ansi(true)
                 .with_max_level(tracing::Level::TRACE)
@@ -123,7 +121,7 @@ mod tests {
     #[test]
     fn test_logging() {
         let mut logging = LoggingConfig::default();
-        logging.autofix();
+        logging.autofix("", None).unwrap();
         logging.level = "trace".to_string();
 
         let _guards = logging.init();
@@ -133,5 +131,17 @@ mod tests {
         info!("info");
         warn!("warn");
         error!("error");
+    }
+
+    #[test]
+    fn test_option() {
+        let v = toml::from_str::<LoggingConfig>(
+            r"
+disable = false
+debug = true
+        ",
+        )
+        .unwrap();
+        println!("{:?}", v);
     }
 }
