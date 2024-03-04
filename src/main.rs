@@ -1,7 +1,7 @@
 use crate::config::Config;
 use crate::conn::on_conn;
 use clap::Parser;
-use config::service::ServiceConfig;
+use config::{runtime, service::ServiceConfig};
 use tracing::{info, trace};
 use uitls::anyhow;
 
@@ -171,20 +171,9 @@ async fn run(config: &'static ServiceConfig) {
     }
 }
 
-fn main() {
-    let config: Config;
-    match load_config() {
-        Ok(v) => {
-            config = v;
-        }
-        Err(e) => {
-            println!("httpd: {}", e);
-            return;
-        }
-    }
-    let config = Box::new(config);
-
-    let config: &'static Config = Box::leak(config);
+fn main() -> anyhow::Result<()> {
+    let config: Config = load_config()?;
+    let config: &'static Config = unsafe { std::mem::transmute(&config) };
 
     let _guards = config.logging.init();
 
@@ -194,49 +183,20 @@ fn main() {
         builder = builder.worker_threads(config.runtime.worker_threads as usize);
     }
 
-    match builder.build() {
-        Ok(runtime) => {
-            runtime.block_on(async {
-                let mut set = tokio::task::JoinSet::new();
+    let runtime = anyhow::result(builder.build())?;
 
-                for service in config.services.values() {
-                    set.spawn(async move {
-                        run(service).await;
-                    });
-                }
+    runtime.block_on(async {
+        let mut set = tokio::task::JoinSet::new();
 
-                while let Some(_) = set.join_next().await {}
+        for service in config.services.values() {
+            set.spawn(async move {
+                run(service).await;
             });
-
-            info!("gracefully shutdown");
         }
-        Err(e) => {
-            tracing::error!("launch tokio runtime failed, {}", e);
-        }
-    }
-}
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn test_rwlock() {
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .unwrap();
+        while let Some(_) = set.join_next().await {}
+    });
 
-        runtime.block_on(async {
-            let mut set = tokio::task::JoinSet::new();
-            for idx in 0..5 {
-                set.spawn(async move {
-                    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-                    println!("{}", idx);
-                });
-            }
-
-            while let Some(_) = set.join_next().await {}
-        });
-
-        println!("DONE");
-    }
+    info!("gracefully shutdown");
+    Ok(())
 }
