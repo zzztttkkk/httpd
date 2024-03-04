@@ -5,13 +5,8 @@ use serde::{de::Visitor, Deserialize};
 pub struct DurationInMillis(pub(crate) std::time::Duration);
 
 impl DurationInMillis {
-    pub(crate) fn new(ms: u64) -> Self {
+    pub fn new(ms: u64) -> Self {
         Self(std::time::Duration::from_millis(ms))
-    }
-
-    #[inline]
-    pub fn duration(&self) -> std::time::Duration {
-        self.0
     }
 }
 

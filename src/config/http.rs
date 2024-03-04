@@ -7,7 +7,7 @@ use super::{bytes_size::BytesSize, duration_in_millis::DurationInMillis};
 #[derive(Deserialize, Clone, Default, Debug)]
 pub struct HttpConfig {
     #[serde(default, alias = "KeepAlive")]
-    pub keep_alive: bool,
+    pub keep_alive: Option<bool>,
 
     #[serde(default, alias = "IdleTimeout")]
     pub idle_timeout: DurationInMillis,
@@ -25,12 +25,33 @@ pub struct HttpConfig {
     pub max_body_size: BytesSize,
 
     #[serde(default, alias = "Compression")]
-    pub compression: i32, // <= 0 : off
+    pub compression: Option<i32>,
 }
 
 impl HttpConfig {
     pub fn autofix(&mut self, root: Option<&Self>) -> anyhow::Result<()> {
-        self.compression = std::cmp::min(11, self.compression);
+        match root {
+            Some(root) => {
+                if self.keep_alive.is_none() {
+                    self.keep_alive = root.keep_alive;
+                }
+                if self.idle_timeout.is_zero() {
+                    self.idle_timeout = root.idle_timeout;
+                }
+                if self.max_url_size.0 < 1 {
+                    self.max_url_size = root.max_url_size;
+                }
+                if self.max_header_line_size.0 < 1 {
+                    self.max_header_line_size = root.max_header_line_size;
+                }
+                if self.compression.is_none() {
+                    self.compression = root.compression;
+                }
+            }
+            None => {}
+        }
+
+        // self.compression = std::cmp::min(11, self.compression);
 
         if !self.idle_timeout.is_zero() && self.idle_timeout.as_millis() < 10000 {
             self.idle_timeout = DurationInMillis(std::time::Duration::from_millis(10000));
