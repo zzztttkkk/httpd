@@ -37,45 +37,74 @@ pub struct Config {
     pub http: HttpConfig,
 
     #[serde(default, alias = "Include")]
-    pub include: String,
+    pub include: String, // glob pattern for service config toml files
+
+    #[serde(default, alias = "Includes")]
+    pub includes: Vec<String>, // glob patterns for service config toml files
 
     #[serde(default, alias = "Services")]
     pub services: HashMap<String, ServiceConfig>,
 }
 
 impl Config {
+    fn include(&mut self, pattern: &str) -> anyhow::Result<()> {
+        for entry in anyhow::result(glob::glob(pattern))? {
+            match entry {
+                Ok(entry) => {
+                    if !entry.is_file() {
+                        continue;
+                    }
+
+                    match entry.as_path().file_name() {
+                        Some(basename) => match basename.to_str() {
+                            Some(v) => {
+                                if v.starts_with(".") {
+                                    continue;
+                                }
+                            }
+                            None => {
+                                continue;
+                            }
+                        },
+                        None => {
+                            continue;
+                        }
+                    }
+
+                    let txt = anyhow::result(std::fs::read_to_string(&entry))?;
+                    match toml::from_str::<ServiceConfig>(&txt) {
+                        Ok(mut service) => {
+                            service.name = format!("{:?}:{}", &entry, &service.name);
+                            if self.services.contains_key(&service.name) {
+                                return Err(anyhow::Error(format!(
+                                    "service name `{}` is exists",
+                                    &service.name
+                                )));
+                            }
+                            self.services.insert(service.name.clone(), service);
+                        }
+                        Err(e) => {
+                            return Err(anyhow::Error(format!(
+                                "load service failed, from `{:?}`, {:?}",
+                                &entry, e
+                            )));
+                        }
+                    }
+                }
+                Err(_) => {}
+            }
+        }
+        Ok(())
+    }
+
     pub fn load(fp: &str) -> anyhow::Result<Self> {
         let txt = anyhow::result(std::fs::read_to_string(fp))?;
         let mut config = anyhow::result(toml::from_str::<Self>(txt.as_str()))?;
         if !config.include.is_empty() {
-            for entry in anyhow::result(glob::glob(config.include.as_str()))? {
-                match entry {
-                    Ok(entry) => {
-                        if entry.is_file() {
-                            let txt = anyhow::result(std::fs::read_to_string(&entry))?;
-                            match toml::from_str::<ServiceConfig>(&txt) {
-                                Ok(mut service) => {
-                                    service.name = format!("{:?}:{}", &entry, &service.name);
-                                    if config.services.contains_key(&service.name) {
-                                        return Err(anyhow::Error(format!(
-                                            "service name `{}` is exists",
-                                            &service.name
-                                        )));
-                                    }
-                                    config.services.insert(service.name.clone(), service);
-                                }
-                                Err(e) => {
-                                    return Err(anyhow::Error(format!(
-                                        "load service failed, from `{:?}`, {:?}",
-                                        &entry, e
-                                    )));
-                                }
-                            }
-                        }
-                    }
-                    Err(_) => {}
-                }
-            }
+            config.include(config.include.clone().as_str())?;
+        }
+        for pattern in config.includes.clone() {
+            config.include(pattern.as_str())?;
         }
 
         if config.services.len() < 1 {
