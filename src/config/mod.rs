@@ -1,11 +1,14 @@
-use std::{collections::HashMap, fmt::format};
+use std::collections::HashMap;
 
 use serde::Deserialize;
 
 use crate::uitls::anyhow;
 
 use self::{
-    http::HttpConfig, logging::LoggingConfig, runtime::RuntimeConfig, service::ServiceConfig,
+    http::HttpConfig,
+    logging::LoggingConfig,
+    runtime::RuntimeConfig,
+    service::{Service, ServiceConfig},
     tcp::TcpConfig,
 };
 
@@ -73,6 +76,16 @@ impl Config {
                     Err(_) => {}
                 }
             }
+        }
+
+        if config.services.len() < 1 {
+            let mut service = ServiceConfig::default();
+            service.name = "helloworld".to_string();
+            service.logging.debug = Some(true);
+            service.tcp.addr = "0.0.0.0:8080".to_string();
+            service.service = Service::HelloWorld;
+            service.host = "*".to_string();
+            config.services.insert("helloworld".to_string(), service);
         }
 
         config.autofix()?;

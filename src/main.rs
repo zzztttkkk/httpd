@@ -115,14 +115,22 @@ async fn tls_loop(
     }
 }
 
+#[tracing::instrument(fields(service = config.name))]
 async fn run(config: &'static ServiceConfig) {
-    let listener = tokio::net::TcpListener::bind(config.tcp.addr.clone())
-        .await
-        .unwrap();
+    let listener;
+    match tokio::net::TcpListener::bind(config.tcp.addr.clone()).await {
+        Ok(v) => {
+            listener = v;
+        }
+        Err(e) => {
+            tracing::error!("bind failed, {}", e);
+            return;
+        }
+    }
 
     let tlscfg = config.tcp.tls.load();
     if tlscfg.is_err() {
-        println!("httpd: load tls failed, {}", tlscfg.err().unwrap());
+        tracing::error!("load tls failed, {}", tlscfg.err().unwrap());
         return;
     }
     let tlscfg = tlscfg.unwrap();
@@ -188,11 +196,6 @@ fn main() {
     let mut builder = builder.enable_all();
     if config.runtime.worker_threads > 0 {
         builder = builder.worker_threads(config.runtime.worker_threads as usize);
-    }
-
-    if config.services.len() < 1 {
-        info!("empty services");
-        return;
     }
 
     match builder.build() {
