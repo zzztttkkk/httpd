@@ -99,20 +99,22 @@ pub struct ServiceConfig {
 
     #[serde(default, alias = "Http")]
     pub http: HttpConfig,
+
+    #[serde(skip)]
+    pub src: String,
 }
 
 impl ServiceConfig {
     pub fn autofix(
         &mut self,
-        name: &str,
         rlog: &LoggingConfig,
         rtcp: &TcpConfig,
         rhttp: &HttpConfig,
     ) -> anyhow::Result<()> {
-        self.logging.autofix(name, Some(rlog))?;
+        self.logging.autofix(&self.name, Some(rlog))?;
         self.tcp.autofix(Some(rtcp))?;
         self.http.autofix(Some(rhttp))?;
-        self.service.autofix(name)?;
+        self.service.autofix(&self.name)?;
         Ok(())
     }
 }

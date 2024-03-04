@@ -1,11 +1,15 @@
 use serde::Deserialize;
 use std::str::FromStr;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, Layer};
+use tracing::subscriber;
+use tracing_subscriber::{layer::SubscriberExt, Layer};
 
 use crate::uitls::anyhow;
 
 #[derive(Deserialize, Clone, Default, Debug)]
 pub struct LoggingConfig {
+    #[serde(skip)]
+    service_name: String,
+
     #[serde(default, alias = "Disable")]
     pub disable: Option<bool>,
 
@@ -22,36 +26,44 @@ pub struct LoggingConfig {
     pub daily_roration: bool,
 }
 
-struct EqualLevelFilter(tracing::Level);
-
-impl<S> tracing_subscriber::layer::Filter<S> for EqualLevelFilter {
-    #[inline]
-    fn enabled(
-        &self,
-        meta: &tracing_core::Metadata<'_>,
-        _: &tracing_subscriber::layer::Context<'_, S>,
-    ) -> bool {
-        *meta.level() == self.0
-    }
-}
-
 impl LoggingConfig {
     pub(crate) fn autofix(&mut self, name: &str, root: Option<&Self>) -> anyhow::Result<()> {
-        if self.directory.is_empty() {
+        self.service_name = name.to_string();
+
+        match root {
+            Some(root) => {
+                if self.directory.is_empty() {
+                    self.directory = format!("{}/{}/", root.directory, self.service_name);
+                }
+            }
+            None => {}
+        }
+
+        if self.directory.is_empty() && name == "" {
             self.directory = "./log".to_string();
         }
 
         Ok(())
     }
 
-    pub fn init(&self) -> Option<Vec<tracing_appender::non_blocking::WorkerGuard>> {
+    pub fn init(
+        &self,
+    ) -> Option<(
+        Vec<tracing_appender::non_blocking::WorkerGuard>,
+        Option<tracing::subscriber::DefaultGuard>,
+    )> {
         if self.disable.is_some() && *self.disable.as_ref().unwrap() {
             return None;
         }
 
         if self.debug.is_some() && *self.debug.as_ref().unwrap() {
+            if !self.service_name.is_empty() {
+                return None;
+            }
+
             let subscriber = tracing_subscriber::fmt()
                 .with_ansi(true)
+                .with_target(false)
                 .with_max_level(tracing::Level::TRACE)
                 .with_file(true)
                 .with_line_number(true)
@@ -61,54 +73,43 @@ impl LoggingConfig {
             return None;
         }
 
-        let levels = vec![
-            tracing::Level::TRACE,
-            tracing::Level::DEBUG,
-            tracing::Level::INFO,
-            tracing::Level::WARN,
-            tracing::Level::ERROR,
-        ];
-
-        let min_level =
+        let level =
             tracing::Level::from_str(self.level.as_str()).map_or(tracing::Level::INFO, |v| v);
-
-        let min_level_idx = levels
-            .iter()
-            .position(|v| v.as_str() == min_level.to_string())
-            .unwrap();
-
-        let levels = &levels[min_level_idx..];
 
         let mut guards = vec![];
 
-        let mut layers = Vec::new();
-
-        for level in levels {
-            let appender;
-            let name = format!("httpd.{}.log", level.as_str().to_lowercase());
-
-            if self.daily_roration {
-                appender =
-                    tracing_appender::rolling::daily(self.directory.to_string(), name.as_str());
-            } else {
-                appender =
-                    tracing_appender::rolling::never(self.directory.to_string(), name.as_str());
-            }
-
-            let (appender, guard) = tracing_appender::non_blocking(appender);
-            guards.push(guard);
-
-            let layer = tracing_subscriber::fmt::layer()
-                .json()
-                .with_writer(appender)
-                .with_filter(EqualLevelFilter(level.clone()))
-                .boxed();
-
-            layers.push(layer);
+        let appender;
+        let name;
+        if self.service_name.is_empty() {
+            name = "httpd.log".to_string();
+        } else {
+            name = format!("{}.log", self.service_name);
         }
 
-        tracing_subscriber::registry().with(layers).init();
-        Some(guards)
+        if self.daily_roration {
+            appender = tracing_appender::rolling::daily(self.directory.to_string(), name.as_str());
+        } else {
+            appender = tracing_appender::rolling::never(self.directory.to_string(), name.as_str());
+        }
+
+        let (appender, guard) = tracing_appender::non_blocking(appender);
+        guards.push(guard);
+
+        let builder = tracing_subscriber::fmt()
+            .json()
+            .with_target(false)
+            .with_writer(appender)
+            .with_max_level(level)
+            .with_file(true)
+            .with_line_number(true);
+
+        if self.service_name.is_empty() {
+            builder.init();
+            Some((guards, None))
+        } else {
+            let dg = tracing::subscriber::set_default(builder.finish());
+            Some((guards, Some(dg)))
+        }
     }
 }
 

@@ -115,7 +115,7 @@ async fn tls_loop(
     }
 }
 
-#[tracing::instrument(fields(service = config.name))]
+#[tracing::instrument(skip(config), fields(name = config.name), name = "Service")]
 async fn run(config: &'static ServiceConfig) {
     let listener;
     match tokio::net::TcpListener::bind(config.tcp.addr.clone()).await {
@@ -135,11 +135,7 @@ async fn run(config: &'static ServiceConfig) {
     }
     let tlscfg = tlscfg.unwrap();
 
-    let mut logo = format!(
-        "listening @ {}, pid {}",
-        config.tcp.addr,
-        std::process::id()
-    );
+    let mut logo = format!("listening @ {}", config.tcp.addr,);
     if tlscfg.is_some() {
         logo = format!("{}, tls ✅", logo);
     }
@@ -201,17 +197,46 @@ fn main() {
     match builder.build() {
         Ok(runtime) => {
             runtime.block_on(async {
+                let mut set = tokio::task::JoinSet::new();
+
                 for service in config.services.values() {
-                    tokio::spawn(async move {
-                        let _guards = service.logging.init();
+                    set.spawn(async move {
                         run(service).await;
                     });
                 }
+
+                while let Some(_) = set.join_next().await {}
             });
+
             info!("gracefully shutdown");
         }
         Err(e) => {
             tracing::error!("launch tokio runtime failed, {}", e);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_rwlock() {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        runtime.block_on(async {
+            let mut set = tokio::task::JoinSet::new();
+            for idx in 0..5 {
+                set.spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                    println!("{}", idx);
+                });
+            }
+
+            while let Some(_) = set.join_next().await {}
+        });
+
+        println!("DONE");
     }
 }

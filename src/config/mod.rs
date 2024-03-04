@@ -24,6 +24,9 @@ pub mod tls;
 
 #[derive(Deserialize, Clone, Default, Debug)]
 pub struct Config {
+    #[serde(default, alias = "Workdir")]
+    pub workdir: String,
+
     #[serde(default, alias = "Runtime")]
     pub runtime: RuntimeConfig,
 
@@ -51,30 +54,33 @@ impl Config {
         for entry in anyhow::result(glob::glob(pattern))? {
             match entry {
                 Ok(entry) => {
-                    if !entry.is_file() {
+                    if !entry.is_file() || entry.as_path().file_name().is_none() {
                         continue;
                     }
 
-                    match entry.as_path().file_name() {
-                        Some(basename) => match basename.to_str() {
-                            Some(v) => {
-                                if v.starts_with(".") {
-                                    continue;
-                                }
-                            }
-                            None => {
-                                continue;
-                            }
-                        },
-                        None => {
-                            continue;
-                        }
+                    let path = entry.as_path().to_string_lossy().to_string();
+                    let basename = entry
+                        .as_path()
+                        .file_name()
+                        .unwrap()
+                        .to_string_lossy()
+                        .to_string();
+
+                    if basename.starts_with(".") {
+                        continue;
                     }
 
                     let txt = anyhow::result(std::fs::read_to_string(&entry))?;
                     match toml::from_str::<ServiceConfig>(&txt) {
                         Ok(mut service) => {
-                            service.name = format!("{:?}:{}", &entry, &service.name);
+                            service.name = service.name.trim().to_string();
+                            if service.name.is_empty() {
+                                return Err(anyhow::Error(format!(
+                                    "service name is empty in file `{:?}`",
+                                    &entry
+                                )));
+                            }
+
                             if self.services.contains_key(&service.name) {
                                 return Err(anyhow::Error(format!(
                                     "service name `{}` is exists",
@@ -100,6 +106,10 @@ impl Config {
     pub fn load(fp: &str) -> anyhow::Result<Self> {
         let txt = anyhow::result(std::fs::read_to_string(fp))?;
         let mut config = anyhow::result(toml::from_str::<Self>(txt.as_str()))?;
+        if !config.workdir.is_empty() {
+            anyhow::result(std::env::set_current_dir(&config.workdir))?;
+        }
+
         if !config.include.is_empty() {
             config.include(config.include.clone().as_str())?;
         }
@@ -137,9 +147,29 @@ impl Config {
             if name.is_empty() {
                 return Err(anyhow::Error(format!("empty service name")));
             }
-            service.autofix(name, &self.logging, &self.tcp, &self.http)?
+            service.name = name.to_string();
+            service.autofix(&self.logging, &self.tcp, &self.http)?
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_glob() {
+        for ele in glob::glob("./src/**/*.rs").unwrap() {
+            let ele = ele.unwrap();
+            let path = ele.as_path().to_string_lossy().to_string();
+            let filename = ele
+                .as_path()
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .to_string();
+
+            println!("{} {}", path, filename);
+        }
     }
 }
