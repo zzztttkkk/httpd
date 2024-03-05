@@ -48,10 +48,10 @@ fn load_config() -> anyhow::Result<Config> {
 
 async fn tls_loop(
     listener: &tokio::net::TcpListener,
-    tlscfg: boring::ssl::SslAcceptor,
+    tlscfg: tokio_rustls::rustls::ServerConfig,
     config: &'static ServiceConfig,
 ) {
-    let acceptor = std::sync::Arc::new(tlscfg);
+    let acceptor = tokio_rustls::TlsAcceptor::from(std::sync::Arc::new(tlscfg));
     let timeout = config.tcp.tls.timeout.0.clone();
 
     loop {
@@ -69,7 +69,7 @@ async fn tls_loop(
                         tokio::spawn(async move {
                             let handshake_result;
                             if !timeout.is_zero() {
-                                match tokio::time::timeout(timeout, tokio_boring::accept(&acceptor, stream)).await {
+                                match tokio::time::timeout(timeout, acceptor.accept(stream)).await {
                                     Ok(r) => {
                                         handshake_result = Some(r);
                                     },
@@ -77,9 +77,8 @@ async fn tls_loop(
                                         handshake_result = None;
                                     },
                                 }
-
                             }else{
-                                handshake_result = Some(tokio_boring::accept(&acceptor, stream).await);
+                                handshake_result = Some(acceptor.accept( stream).await);
                             }
 
                             match handshake_result {

@@ -10,7 +10,7 @@ edition = "2021"
 clap = { version = "4.5.1", features = ["derive"] }
 tokio = { version = " 1.36.0", features = ["full"] }
 bytebuffer = "2.2.0"
-
+glob = { version = "0.3.1" }
 
 # compression
 flate2 = "1.0.28"
@@ -19,14 +19,12 @@ brotli = "3.4.0"
 # config
 toml = { version = "0.8.10" }
 serde = { version = "1.0.197", features = ["derive"] }
-glob = { version = "0.3.1" }
 
-# --ssl
-tokio-boring = { version = "4.5.0" }
-boring = { version = "4.5.0" }
+# ssl
+tokio-rustls = { version = "0.25.0" }
+rustls-pemfile = { version = "2.1.0" }
 
 # loggging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json"] }
 tracing-appender = "0.2.3"
-tracing-core = "0.1.32"
