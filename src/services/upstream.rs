@@ -14,7 +14,6 @@ impl UpstreamService {
         r: R,
         w: W,
         addr: SocketAddr,
-        config: &'static ServiceConfig,
     ) {
     }
 }

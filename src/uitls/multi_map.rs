@@ -48,6 +48,34 @@ impl MultiMap {
         }
     }
 
+    pub fn set(&mut self, k: &str, v: &str) {
+        if self.ismap {
+            let map = self.map.as_mut().unwrap();
+            match map.get_mut(k) {
+                Some(vs) => {
+                    vs.clear();
+                    vs.push(v.to_string());
+                }
+                None => {
+                    map.insert(k.to_string(), vec![v.to_string()]);
+                }
+            }
+            return;
+        }
+
+        let pairs = &mut self.vec;
+        match Self::vec_find_or_empty(pairs, k) {
+            Some(pos) => {
+                let vs = unsafe { pairs.get_unchecked_mut(pos) }; // safety: `pos` returned by `vec.position`
+                vs.1.clear();
+                vs.1.push(v.to_string());
+            }
+            None => {
+                pairs.push((k.to_string(), vec![v.to_string()]));
+            }
+        }
+    }
+
     pub fn append(&mut self, k: &str, v: &str) {
         if self.ismap {
             self.map_append(k, v);

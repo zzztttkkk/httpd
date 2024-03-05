@@ -18,6 +18,7 @@ mod http11;
 mod message;
 mod protocols;
 mod request;
+mod response;
 mod services;
 pub mod uitls;
 mod ws;
@@ -63,7 +64,7 @@ macro_rules! services_dispatch {
                                 let service = $service.clone();
                                 tokio::spawn(async move {
                                     let (r,w ) = stream.split();
-                                    service.serve(r, w, addr, $config).await;
+                                    service.serve(r, w, addr).await;
                                 });
                             },
                             Err(e) => {
@@ -106,7 +107,7 @@ macro_rules! services_dispatch {
                                                 match handshake_result {
                                                     Ok(stream) => {
                                                         let (r, w) = tokio::io::split(stream);
-                                                        service.serve(r, w, addr, $config).await;
+                                                        service.serve(r, w, addr).await;
                                                     },
                                                     Err(e) => {
                                                         #[cfg(debug_assertions)]

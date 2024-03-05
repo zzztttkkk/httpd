@@ -207,7 +207,7 @@ fn is_latin_1_graphic(b: u8) -> bool {
 }
 
 impl Message {
-    fn get_content_length(&self) -> Result<usize, ()> {
+    pub(crate) fn get_content_length(&self) -> Result<usize, ()> {
         match self.headers.get("content-length") {
             Some(vs) => match vs.parse::<usize>() {
                 Ok(num) => Ok(num),
@@ -225,7 +225,7 @@ impl Message {
         _ = self.body.write(v);
     }
 
-    async fn read_const_length_body<R: AsyncBufReadExt + Unpin>(
+    async fn _read_const_length_body<R: AsyncBufReadExt + Unpin>(
         &mut self,
         reader: &mut R,
         buf: &mut Vec<u8>,
@@ -234,7 +234,24 @@ impl Message {
         read_const_length_body_impl!(self, reader, buf, remain_size, write_raw);
     }
 
-    async fn read_const_length_body_decompression<R: AsyncBufReadExt + Unpin>(
+    #[inline]
+    pub(crate) async fn read_const_length_body<
+        R: AsyncBufReadExt + Unpin,
+        W: AsyncWriteExt + Unpin,
+    >(
+        &mut self,
+        ctx: &mut ConnContext<R, W>,
+    ) -> MessageReadCode {
+        match self.get_content_length() {
+            Ok(size) => {
+                self._read_const_length_body(&mut ctx.reader, &mut ctx.buf, size)
+                    .await
+            }
+            Err(_) => MessageReadCode::BadContentLength,
+        }
+    }
+
+    pub(crate) async fn read_const_length_body_decompression<R: AsyncBufReadExt + Unpin>(
         &mut self,
         reader: &mut R,
         buf: &mut Vec<u8>,
@@ -243,7 +260,7 @@ impl Message {
         read_const_length_body_impl!(self, reader, buf, remain_size, write_compression);
     }
 
-    async fn read_chunked_body<R: AsyncBufReadExt + Unpin>(
+    pub(crate) async fn read_chunked_body<R: AsyncBufReadExt + Unpin>(
         &mut self,
         reader: &mut R,
         buf: &mut Vec<u8>,
@@ -252,7 +269,7 @@ impl Message {
         read_chunked_body_impl!(self, reader, buf, max_body_size, write_raw);
     }
 
-    async fn read_chunked_body_decompression<R: AsyncBufReadExt + Unpin>(
+    pub(crate) async fn read_chunked_body_decompression<R: AsyncBufReadExt + Unpin>(
         &mut self,
         reader: &mut R,
         buf: &mut Vec<u8>,
@@ -261,7 +278,7 @@ impl Message {
         read_chunked_body_impl!(self, reader, buf, max_body_size, write_compression);
     }
 
-    async fn read_body_normal<R: AsyncBufReadExt + Unpin>(
+    pub(crate) async fn read_body_normal<R: AsyncBufReadExt + Unpin>(
         &mut self,
         reader: &mut R,
         buf: &mut Vec<u8>,
@@ -281,7 +298,7 @@ impl Message {
                 if remain_size > config.max_body_size.0 {
                     return MessageReadCode::ReachMaxBodySize;
                 }
-                self.read_const_length_body(reader, buf, remain_size).await
+                self._read_const_length_body(reader, buf, remain_size).await
             }
             Err(_) => MessageReadCode::BadContentLength,
         }

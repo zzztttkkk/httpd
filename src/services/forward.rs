@@ -14,7 +14,6 @@ impl ForwardService {
         r: R,
         w: W,
         addr: SocketAddr,
-        config: &'static ServiceConfig,
     ) {
     }
 }
