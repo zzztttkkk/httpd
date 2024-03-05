@@ -202,7 +202,7 @@ impl MultiMap {
         }
     }
 
-    pub fn each<V: Fn(&str, &Vec<String>) -> bool>(&self, visitor: V) {
+    pub fn each<V: FnMut(&str, &Vec<String>) -> bool>(&self, visitor: &mut V) {
         if self.ismap {
             for (k, vs) in self.map.as_ref().unwrap().iter() {
                 if !visitor(k, vs) {
@@ -219,7 +219,7 @@ impl MultiMap {
         }
     }
 
-    pub fn each_mut<V: Fn(&str, &mut Vec<String>) -> bool>(&mut self, visitor: V) {
+    pub fn each_mut<V: Fn(&str, &mut Vec<String>) -> bool>(&mut self, visitor: &mut V) {
         if self.ismap {
             for (k, vs) in self.map.as_mut().unwrap().iter_mut() {
                 if !visitor(k, vs) {
@@ -264,7 +264,7 @@ mod tests {
 
         println!("{:?}", map);
 
-        map.each_mut(|k, vs| {
+        map.each_mut(&mut |k, vs| {
             vs.push("0.0".to_string());
             true
         });

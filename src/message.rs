@@ -2,7 +2,7 @@ use std::io::Write;
 
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 
-use crate::compression::WriteCompressionImpl;
+use crate::compression::{BoxedWriteCompressionImpl, _WriteCompressionImpl};
 use crate::config::http::HttpConfig;
 use crate::uitls::header;
 use crate::{ctx::ConnContext, uitls::multi_map::MultiMap};
@@ -17,7 +17,7 @@ enum ReadState {
 
 pub(crate) struct MessageBody {
     pub(crate) internal: Option<Box<bytebuffer::ByteBuffer>>,
-    pub(crate) cw: Option<Box<dyn WriteCompressionImpl<Box<bytebuffer::ByteBuffer>> + Send>>,
+    pub(crate) cw: Option<Box<dyn BoxedWriteCompressionImpl + Send>>,
 }
 
 impl Default for MessageBody {
@@ -49,9 +49,8 @@ pub(crate) enum CompressionType {
 }
 
 impl MessageBody {
-    pub(crate) fn compression(mut self, ct: CompressionType, level: u32) {
-        let buf = self.internal.unwrap();
-        self.internal = None;
+    pub(crate) fn compression(&mut self, ct: CompressionType, level: u32) {
+        let buf = self.internal.take().unwrap();
 
         match ct {
             CompressionType::Brotil => {
@@ -76,9 +75,8 @@ impl MessageBody {
         }
     }
 
-    pub(crate) fn decompression(mut self, ct: CompressionType) {
-        let buf = self.internal.unwrap();
-        self.internal = None;
+    pub(crate) fn decompression(&mut self, ct: CompressionType) {
+        let buf = self.internal.take().unwrap();
 
         match ct {
             CompressionType::Brotil => {
@@ -304,6 +302,14 @@ impl Message {
         }
     }
 
+    pub fn flush(&mut self) -> std::io::Result<()> {
+        match self.body.cw.take() {
+            Some(cw) => self.body.internal = Some(cw.expose()?),
+            None => {}
+        }
+        Ok(())
+    }
+
     pub(crate) async fn read_headers<R: AsyncBufReadExt + Unpin, W: AsyncWriteExt + Unpin>(
         &mut self,
         ctx: &mut ConnContext<R, W>,
@@ -460,15 +466,36 @@ impl Message {
             }
         }
     }
-}
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn test_unsafe_steing() {
-        let a = 00;
-        let b = [0 as u8; 4096 * 10];
-        let c = 00;
-        println!("{:p} {:p} {:p}", &a, &b, &c);
+    pub(crate) async fn write_to<R: AsyncBufReadExt + Unpin, W: AsyncWriteExt + Unpin>(
+        &self,
+        ctx: &mut ConnContext<R, W>,
+    ) -> std::io::Result<()> {
+        let w = &mut ctx.writer;
+        let buf = &mut ctx.buf;
+        buf.clear();
+
+        buf.copy_from_slice(self.firstline.0.as_bytes());
+        buf.push(b' ');
+        buf.copy_from_slice(self.firstline.1.as_bytes());
+        buf.push(b' ');
+        buf.copy_from_slice(self.firstline.2.as_bytes());
+        buf.copy_from_slice("\r\n".as_bytes());
+
+        let mut visitor = |k: &str, vs: &Vec<String>| -> bool {
+            for v in vs {
+                buf.copy_from_slice(k.as_bytes());
+                buf.copy_from_slice(": ".as_bytes());
+                buf.copy_from_slice(v.as_bytes());
+                buf.copy_from_slice("\r\n".as_bytes());
+            }
+            true
+        };
+        self.headers.each(&mut visitor);
+        buf.copy_from_slice("\r\n".as_bytes());
+
+        w.write_all(&buf).await?;
+
+        Ok(())
     }
 }
