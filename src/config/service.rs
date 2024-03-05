@@ -11,8 +11,6 @@ pub struct ProxyRule {}
 
 #[derive(Deserialize, Clone, Debug)]
 pub enum Service {
-    #[serde(alias = "none")]
-    None,
     #[serde(alias = "helloworld")]
     HelloWorld,
     #[serde(alias = "fs")]
@@ -76,7 +74,7 @@ impl Service {
 
 impl Default for Service {
     fn default() -> Self {
-        Self::None
+        Self::HelloWorld
     }
 }
 
