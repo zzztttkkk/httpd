@@ -1,6 +1,9 @@
 use crate::{
     config::Config,
-    services::{fs::FsService, helloworld::HelloWorldService},
+    services::{
+        forward::ForwardService, fs::FsService, helloworld::HelloWorldService,
+        upstream::UpstreamService,
+    },
 };
 use clap::Parser;
 use config::service::ServiceConfig;
@@ -181,11 +184,20 @@ async fn run(config: &'static ServiceConfig) {
             let service = std::sync::Arc::new(FsService::new(config));
             services_dispatch!(tlscfg, listener, config, service);
         }
-        config::service::Service::Forward { target_addr, rules } => todo!(),
+        config::service::Service::Forward {
+            target_addr: _,
+            rules: _,
+        } => {
+            let service = std::sync::Arc::new(ForwardService::new(config));
+            services_dispatch!(tlscfg, listener, config, service);
+        }
         config::service::Service::Upstream {
-            target_addrs,
-            rules,
-        } => todo!(),
+            target_addrs: _,
+            rules: _,
+        } => {
+            let service = std::sync::Arc::new(UpstreamService::new(config));
+            services_dispatch!(tlscfg, listener, config, service);
+        }
     }
 }
 

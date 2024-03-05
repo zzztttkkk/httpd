@@ -66,8 +66,7 @@ impl LoggingConfig {
                 .with_file(true)
                 .with_line_number(true)
                 .finish();
-            _ = tracing::subscriber::set_global_default(subscriber)
-                .expect("failed to init logging");
+            tracing::subscriber::set_global_default(subscriber).expect("failed to init logging");
             return None;
         }
 
