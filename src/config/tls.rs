@@ -25,8 +25,7 @@ impl TlsConfig {
             }
             None => {}
         }
-
-        if self.timeout.is_zero() {
+        if self.timeout.as_millis() < 1 {
             self.timeout = DurationInMillis(std::time::Duration::from_secs(15));
         }
         Ok(())

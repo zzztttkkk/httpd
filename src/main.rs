@@ -97,20 +97,10 @@ macro_rules! services_dispatch {
                                     let acceptor = acceptor.clone();
                                     let service = $service.clone();
                                     tokio::spawn(async move {
-                                        let handshake_result;
-                                        if !timeout.is_zero() {
-                                            match tokio::time::timeout(timeout, acceptor.accept(stream)).await {
-                                                Ok(r) => {
-                                                    handshake_result = Some(r);
-                                                },
-                                                Err(_) => {
-                                                    handshake_result = None;
-                                                },
-                                            }
-                                        }else{
-                                            handshake_result = Some(acceptor.accept( stream).await);
-                                        }
-
+                                        let handshake_result = match tokio::time::timeout(timeout, acceptor.accept(stream)).await {
+                                            Ok(r) => Some(r),
+                                            Err(_) => None,
+                                        };
                                         match handshake_result {
                                             Some(handshake_result) => {
                                                 match handshake_result {
@@ -201,12 +191,7 @@ async fn run(config: &'static ServiceConfig) {
     }
 }
 
-fn main() -> anyhow::Result<()> {
-    let config: Config = load_config()?;
-    let config: &'static Config = unsafe { std::mem::transmute(&config) };
-
-    let _guards = config.logging.init();
-
+fn run_multi_threads(config: &'static Config) -> anyhow::Result<()> {
     let mut builder = tokio::runtime::Builder::new_multi_thread();
     let mut builder = builder.enable_all();
     if config.runtime.worker_threads > 0 {
@@ -226,6 +211,59 @@ fn main() -> anyhow::Result<()> {
 
         while let Some(_) = set.join_next().await {}
     });
+
+    Ok(())
+}
+
+fn run_per_core(config: &'static Config) -> anyhow::Result<()> {
+    let lock = std::sync::Arc::new(std::sync::RwLock::new(()));
+
+    for service in config.services.values() {
+        let lock = lock.clone();
+        std::thread::spawn(move || -> anyhow::Result<()> {
+            let _g = anyhow::result(lock.read())?;
+
+            let mut builder = tokio::runtime::Builder::new_current_thread();
+            let builder = builder.enable_all();
+            let runtime = anyhow::result(builder.build())?;
+            runtime.block_on(async {
+                run(service).await;
+            });
+            Ok(())
+        });
+    }
+
+    // this loop waiting for the threads hold the read lock
+    loop {
+        match lock.try_write() {
+            Ok(g) => {
+                std::mem::drop(g);
+                std::thread::sleep(std::time::Duration::from_millis(10));
+                continue;
+            }
+            _ => {
+                break;
+            }
+        }
+    }
+
+    let _g = anyhow::result(lock.write())?;
+    Ok(())
+}
+
+fn main() -> anyhow::Result<()> {
+    let config: Config = load_config()?;
+    let config: &'static Config = unsafe { std::mem::transmute(&config) };
+
+    let _guards = config.logging.init();
+
+    info!("load configuration ok");
+
+    if config.runtime.per_core.is_some() && config.runtime.per_core.unwrap() {
+        run_per_core(config)?;
+    } else {
+        run_multi_threads(config)?;
+    }
 
     info!("gracefully shutdown");
     Ok(())
