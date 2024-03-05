@@ -76,8 +76,8 @@ macro_rules! services_dispatch {
                     }
                 }
             },
-            Some($tlscfg) => {
-                let acceptor = tokio_rustls::TlsAcceptor::from(std::sync::Arc::new($tlscfg));
+            Some(tlscfg) => {
+                let acceptor = tokio_rustls::TlsAcceptor::from(std::sync::Arc::new(tlscfg));
                 let timeout = $config.tcp.tls.timeout.0.clone();
 
                 loop {
