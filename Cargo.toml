@@ -3,6 +3,9 @@ name = "httpd"
 version = "0.0.1"
 edition = "2021"
 
+[profile.release]
+opt-level = 3
+
 [features]
 
 
@@ -29,3 +32,4 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json"] }
 tracing-appender = "0.2.3"
 async-trait = "0.1.77"
+tracing-futures = { version = "0.2.5", features = ["tokio"] }

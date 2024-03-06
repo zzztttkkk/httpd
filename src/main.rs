@@ -7,7 +7,7 @@ use crate::{
 };
 use clap::Parser;
 use config::service::ServiceConfig;
-use tracing::{info, trace};
+use tracing::{info, trace, Instrument};
 use uitls::anyhow;
 
 mod compression;
@@ -20,6 +20,8 @@ mod response;
 mod services;
 pub mod uitls;
 mod ws;
+
+use tracing_futures::WithSubscriber;
 
 #[derive(clap::Parser, Debug)]
 #[command(name = "httpd")]
@@ -137,9 +139,7 @@ macro_rules! services_dispatch {
 }
 
 #[tracing::instrument(skip(config), fields(name = config.name), name = "Service")]
-async fn run(config: &'static ServiceConfig) {
-    let _guards = config.logging.init();
-
+async fn _run(config: &'static ServiceConfig) {
     let listener;
     match tokio::net::TcpListener::bind(config.tcp.addr.clone()).await {
         Ok(v) => {
@@ -186,6 +186,19 @@ async fn run(config: &'static ServiceConfig) {
         } => {
             let service = std::sync::Arc::new(UpstreamService::new(config));
             services_dispatch!(tlscfg, listener, config, service);
+        }
+    }
+}
+
+async fn run(config: &'static ServiceConfig) {
+    let mut sub = config.logging.init();
+    let fut = _run(config);
+    match sub.take() {
+        Some(sub) => {
+            fut.in_current_span().with_subscriber(sub).await;
+        }
+        None => {
+            fut.await;
         }
     }
 }
@@ -256,9 +269,17 @@ fn main() -> anyhow::Result<()> {
     let config: Config = load_config()?;
     let config: &'static Config = unsafe { std::mem::transmute(&config) };
 
-    let _guards = config.logging.init();
+    let dispatcher = match config.logging.init() {
+        Some(sub) => Some(tracing::dispatcher::Dispatch::new(sub)),
+        None => None,
+    };
 
-    info!("load configuration ok");
+    let _g = match dispatcher.as_ref() {
+        Some(v) => Some(tracing::dispatcher::set_default(v)),
+        None => None,
+    };
+
+    info!("load configuration ok, pid: {}", std::process::id());
 
     if config.runtime.per_core.is_some() && config.runtime.per_core.unwrap() {
         run_per_core(config)?;

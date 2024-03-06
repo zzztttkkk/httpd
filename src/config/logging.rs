@@ -1,5 +1,8 @@
 use serde::Deserialize;
 use std::str::FromStr;
+use tracing::subscriber;
+use tracing_futures::WithSubscriber;
+use tracing_subscriber::util::SubscriberInitExt;
 
 use crate::uitls::anyhow;
 
@@ -44,12 +47,7 @@ impl LoggingConfig {
         Ok(())
     }
 
-    pub fn init(
-        &self,
-    ) -> Option<(
-        Vec<tracing_appender::non_blocking::WorkerGuard>,
-        Option<tracing::subscriber::DefaultGuard>,
-    )> {
+    pub fn init(&self) -> Option<Box<dyn tracing::Subscriber + Send + Sync>> {
         if self.disable.is_some() && *self.disable.as_ref().unwrap() {
             return None;
         }
@@ -62,14 +60,7 @@ impl LoggingConfig {
                 .with_file(true)
                 .with_line_number(true)
                 .finish();
-
-            if !self.service_name.is_empty() {
-                let dg = tracing::subscriber::set_default(subscriber);
-                return Some((vec![], Some(dg)));
-            }
-
-            tracing::subscriber::set_global_default(subscriber).expect("failed to init logging");
-            return None;
+            return Some(Box::new(subscriber));
         }
 
         let level =
@@ -94,21 +85,16 @@ impl LoggingConfig {
         let (appender, guard) = tracing_appender::non_blocking(appender);
         guards.push(guard);
 
-        let builder = tracing_subscriber::fmt()
+        let subscriber = tracing_subscriber::fmt()
             .json()
             .with_target(false)
             .with_writer(appender)
             .with_max_level(level)
             .with_file(true)
-            .with_line_number(true);
+            .with_line_number(true)
+            .finish();
 
-        if self.service_name.is_empty() {
-            builder.init();
-            Some((guards, None))
-        } else {
-            let dg = tracing::subscriber::set_default(builder.finish());
-            Some((guards, Some(dg)))
-        }
+        Some(Box::new(subscriber))
     }
 }
 
@@ -131,17 +117,5 @@ mod tests {
         info!("info");
         warn!("warn");
         error!("error");
-    }
-
-    #[test]
-    fn test_option() {
-        let v = toml::from_str::<LoggingConfig>(
-            r"
-disable = false
-debug = true
-        ",
-        )
-        .unwrap();
-        println!("{:?}", v);
     }
 }
