@@ -11,7 +11,7 @@ pub trait BoxedWriteCompressionImpl: _WriteCompressionImpl {
 
 impl<T: _WriteCompressionImpl> BoxedWriteCompressionImpl for T
 where
-    T: Sized,
+    T: Sized + Sync + Send,
 {
     fn expose(self: Box<Self>) -> std::io::Result<Box<bytebuffer::ByteBuffer>> {
         self._expose()

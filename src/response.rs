@@ -29,17 +29,17 @@ impl ResponseBuilder {
         self.inner
     }
 
-    pub fn with_code(&mut self, code: u32, reason: &str) -> &mut Self {
-        self.inner.firstline.0.push_str(code.to_string().as_str());
-        self.inner.firstline.1.push_str(reason);
-        self
-    }
-
     pub fn with_version(&mut self, major: u8, minor: u8) -> &mut Self {
         self.inner
             .firstline
-            .2
+            .0
             .push_str(format!("HTTP/{}.{}", major, minor).as_str());
+        self
+    }
+
+    pub fn with_code(&mut self, code: u32, reason: &str) -> &mut Self {
+        self.inner.firstline.1.push_str(code.to_string().as_str());
+        self.inner.firstline.2.push_str(reason);
         self
     }
 

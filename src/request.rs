@@ -1,18 +1,15 @@
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
-
 use crate::{
     ctx::ConnContext,
     message::{Message, MessageReadCode},
 };
 
-#[derive(Default)]
-pub struct Request {
-    pub(crate) msg: Message,
+pub struct RequestQueryer<'a> {
+    msg: &'a Message,
 }
 
-impl Request {
-    pub fn new() -> Self {
-        Default::default()
+impl<'a> RequestQueryer<'a> {
+    pub fn new(msg: &'a Message) -> Self {
+        Self { msg }
     }
 
     pub fn method(&self) -> &String {

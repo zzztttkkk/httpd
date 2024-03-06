@@ -2,7 +2,7 @@ use std::io::Write;
 
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 
-use crate::compression::{BoxedWriteCompressionImpl, _WriteCompressionImpl};
+use crate::compression::BoxedWriteCompressionImpl;
 use crate::config::http::HttpConfig;
 use crate::uitls::header;
 use crate::{ctx::ConnContext, uitls::multi_map::MultiMap};
@@ -17,7 +17,7 @@ enum ReadState {
 
 pub(crate) struct MessageBody {
     pub(crate) internal: Option<Box<bytebuffer::ByteBuffer>>,
-    pub(crate) cw: Option<Box<dyn BoxedWriteCompressionImpl + Send>>,
+    pub(crate) cw: Option<Box<dyn BoxedWriteCompressionImpl + Send + Sync>>,
 }
 
 impl Default for MessageBody {
@@ -89,6 +89,35 @@ impl MessageBody {
                 self.cw = Some(Box::new(flate2::write::GzDecoder::new(buf)));
             }
         }
+    }
+
+    pub(crate) fn clear(&mut self) {
+        match self.end() {
+            Ok(_) => {}
+            Err(_) => {
+                self.cw.take();
+                self.internal = Some(Box::new(bytebuffer::ByteBuffer::default()));
+            }
+        }
+    }
+
+    pub(crate) fn end(&mut self) -> std::io::Result<()> {
+        match self.cw.take() {
+            Some(cw) => self.internal = Some(cw.expose()?),
+            None => {}
+        }
+        Ok(())
+    }
+
+    pub(crate) fn size(&self) -> usize {
+        match self.internal.as_ref() {
+            Some(buf) => buf.len(),
+            None => 0,
+        }
+    }
+
+    pub(crate) fn inner(&self) -> &[u8] {
+        self.internal.as_ref().unwrap().as_bytes()
     }
 }
 
@@ -205,6 +234,14 @@ fn is_latin_1_graphic(b: u8) -> bool {
 }
 
 impl Message {
+    pub(crate) fn clear(&mut self) {
+        self.firstline.0.clear();
+        self.firstline.1.clear();
+        self.firstline.2.clear();
+        self.headers.clear();
+        self.body.clear();
+    }
+
     pub(crate) fn get_content_length(&self) -> Result<usize, ()> {
         match self.headers.get("content-length") {
             Some(vs) => match vs.parse::<usize>() {
@@ -300,14 +337,6 @@ impl Message {
             }
             Err(_) => MessageReadCode::BadContentLength,
         }
-    }
-
-    pub fn flush(&mut self) -> std::io::Result<()> {
-        match self.body.cw.take() {
-            Some(cw) => self.body.internal = Some(cw.expose()?),
-            None => {}
-        }
-        Ok(())
     }
 
     pub(crate) async fn read_headers<R: AsyncBufReadExt + Unpin, W: AsyncWriteExt + Unpin>(
@@ -468,34 +497,42 @@ impl Message {
     }
 
     pub(crate) async fn write_to<R: AsyncBufReadExt + Unpin, W: AsyncWriteExt + Unpin>(
-        &self,
+        &mut self,
         ctx: &mut ConnContext<R, W>,
     ) -> std::io::Result<()> {
         let w = &mut ctx.writer;
         let buf = &mut ctx.buf;
         buf.clear();
 
-        buf.copy_from_slice(self.firstline.0.as_bytes());
+        buf.extend_from_slice(self.firstline.0.as_bytes());
         buf.push(b' ');
-        buf.copy_from_slice(self.firstline.1.as_bytes());
+        buf.extend_from_slice(self.firstline.1.as_bytes());
         buf.push(b' ');
-        buf.copy_from_slice(self.firstline.2.as_bytes());
-        buf.copy_from_slice("\r\n".as_bytes());
+        buf.extend_from_slice(self.firstline.2.as_bytes());
+        buf.extend_from_slice("\r\n".as_bytes());
+
+        self.body.end()?;
+        let bodysize = self.body.size();
+        self.headers
+            .set("content-length", bodysize.to_string().as_str());
 
         let mut visitor = |k: &str, vs: &Vec<String>| -> bool {
             for v in vs {
-                buf.copy_from_slice(k.as_bytes());
-                buf.copy_from_slice(": ".as_bytes());
-                buf.copy_from_slice(v.as_bytes());
-                buf.copy_from_slice("\r\n".as_bytes());
+                buf.extend_from_slice(k.as_bytes());
+                buf.extend_from_slice(": ".as_bytes());
+                buf.extend_from_slice(v.as_bytes());
+                buf.extend_from_slice("\r\n".as_bytes());
             }
             true
         };
         self.headers.each(&mut visitor);
-        buf.copy_from_slice("\r\n".as_bytes());
+        buf.extend_from_slice("\r\n".as_bytes());
 
         w.write_all(&buf).await?;
-
+        if bodysize > 0 {
+            w.write_all(self.body.inner()).await?;
+        }
+        w.flush().await?;
         Ok(())
     }
 }

@@ -12,9 +12,7 @@ use uitls::anyhow;
 
 mod compression;
 mod config;
-mod conn;
 mod ctx;
-mod http11;
 mod message;
 mod protocols;
 mod request;
@@ -221,7 +219,8 @@ fn run_per_core(config: &'static Config) -> anyhow::Result<()> {
 
     for service in config.services.values() {
         let lock = lock.clone();
-        std::thread::spawn(move || -> anyhow::Result<()> {
+        let builder = std::thread::Builder::new().name(format!("httpd.service:{}", service.name));
+        let result = builder.spawn(move || -> anyhow::Result<()> {
             let _g = anyhow::result(lock.read())?;
 
             let mut builder = tokio::runtime::Builder::new_current_thread();
@@ -232,6 +231,7 @@ fn run_per_core(config: &'static Config) -> anyhow::Result<()> {
             });
             Ok(())
         });
+        _ = anyhow::result(result)?;
     }
 
     // this loop waiting for the threads hold the read lock
@@ -266,6 +266,6 @@ fn main() -> anyhow::Result<()> {
         run_multi_threads(config)?;
     }
 
-    info!("gracefully shutdown");
+    info!("shutdown");
     Ok(())
 }

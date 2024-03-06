@@ -55,10 +55,6 @@ impl LoggingConfig {
         }
 
         if self.debug.is_some() && *self.debug.as_ref().unwrap() {
-            if !self.service_name.is_empty() {
-                return None;
-            }
-
             let subscriber = tracing_subscriber::fmt()
                 .with_ansi(true)
                 .with_target(false)
@@ -66,6 +62,12 @@ impl LoggingConfig {
                 .with_file(true)
                 .with_line_number(true)
                 .finish();
+
+            if !self.service_name.is_empty() {
+                let dg = tracing::subscriber::set_default(subscriber);
+                return Some((vec![], Some(dg)));
+            }
+
             tracing::subscriber::set_global_default(subscriber).expect("failed to init logging");
             return None;
         }
