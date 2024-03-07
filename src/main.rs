@@ -190,8 +190,10 @@ async fn _run(config: &'static ServiceConfig) {
 }
 
 async fn run(config: &'static ServiceConfig) {
+    let _g;
     match config.logging.init() {
-        Some(subscriber) => {
+        Some((subscriber, guard)) => {
+            _g = guard;
             _run(config).with_subscriber(subscriber).await;
         }
         None => {
@@ -266,9 +268,11 @@ fn main() -> anyhow::Result<()> {
     let config: Config = load_config()?;
     let config: &'static Config = unsafe { std::mem::transmute(&config) };
 
+    let _g;
     match config.logging.init() {
-        Some(subscriber) => {
+        Some((subscriber, guard)) => {
             anyhow::result(tracing::subscriber::set_global_default(subscriber))?;
+            _g = guard;
         }
         None => {}
     };

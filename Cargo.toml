@@ -13,11 +13,11 @@ clap = { version = "4.5.1", features = ["derive"] }
 tokio = { version = " 1.36.0", features = ["full"] }
 bytebuffer = "2.2.0"
 glob = { version = "0.3.1" }
-smallvec = "1.13.1"
+smallvec = { version = "1.13.1" }
 
 # compression
-flate2 = "1.0.28"
-brotli = "3.4.0"
+flate2 = { version = "1.0.28" }
+brotli = { version = "3.4.0" }
 
 # config
 toml = { version = "0.8.10" }
@@ -30,6 +30,5 @@ rustls-pemfile = { version = "2.1.0" }
 # loggging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json"] }
-tracing-appender = "0.2.3"
-async-trait = "0.1.77"
-tracing-futures = { version = "0.2.5", features = ["tokio"] }
+tracing-appender = { version = "0.2.3" }
+tracing-futures = { version = "0.2.5" }

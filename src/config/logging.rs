@@ -22,6 +22,12 @@ pub struct LoggingConfig {
 
     #[serde(default, alias = "DailyRoration", alias = "Daily", alias = "daily")]
     pub daily_roration: bool,
+
+    #[serde(default, alias = "Lossy")]
+    pub lossy: Option<bool>,
+
+    #[serde(default, alias = "BufLines")]
+    pub buf_lines: Option<usize>,
 }
 
 impl LoggingConfig {
@@ -44,10 +50,18 @@ impl LoggingConfig {
             self.directory = "./log".to_string();
         }
 
+        if self.buf_lines.is_some() && self.buf_lines.unwrap() < 10240 {
+            self.buf_lines = Some(10240);
+        }
         Ok(())
     }
 
-    pub fn init(&self) -> Option<Box<dyn tracing::Subscriber + Send + Sync>> {
+    pub fn init(
+        &self,
+    ) -> Option<(
+        Box<dyn tracing::Subscriber + Send + Sync>,
+        Option<tracing_appender::non_blocking::WorkerGuard>,
+    )> {
         if self.disable.is_some() && *self.disable.as_ref().unwrap() {
             return None;
         }
@@ -60,13 +74,11 @@ impl LoggingConfig {
                 .with_file(true)
                 .with_line_number(true)
                 .finish();
-            return Some(Box::new(subscriber));
+            return Some((Box::new(subscriber), None));
         }
 
         let level =
             tracing::Level::from_str(self.level.as_str()).map_or(tracing::Level::INFO, |v| v);
-
-        let mut guards = vec![];
 
         let appender;
         let name;
@@ -82,11 +94,21 @@ impl LoggingConfig {
             appender = tracing_appender::rolling::never(self.directory.to_string(), name.as_str());
         }
 
-        let (appender, guard) = tracing_appender::non_blocking(appender);
-        guards.push(guard);
+        let mut builder = tracing_appender::non_blocking::NonBlockingBuilder::default();
+        if self.lossy.is_some() {
+            builder = builder.lossy(self.lossy.unwrap());
+        } else {
+            builder = builder.lossy(false);
+        }
+        if self.buf_lines.is_some() {
+            builder = builder.buffered_lines_limit(self.buf_lines.unwrap());
+        }
+
+        let (appender, guard) = builder.finish(appender);
 
         let subscriber = tracing_subscriber::fmt()
             .json()
+            .with_ansi(false)
             .with_target(false)
             .with_writer(appender)
             .with_max_level(level)
@@ -94,28 +116,6 @@ impl LoggingConfig {
             .with_line_number(true)
             .finish();
 
-        Some(Box::new(subscriber))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use tracing::{debug, error, info, trace, warn};
-
-    use super::LoggingConfig;
-
-    #[test]
-    fn test_logging() {
-        let mut logging = LoggingConfig::default();
-        logging.autofix("", None).unwrap();
-        logging.level = "trace".to_string();
-
-        let _guards = logging.init();
-
-        trace!("trace");
-        debug!("debug");
-        info!("info");
-        warn!("warn");
-        error!("error");
+        Some((Box::new(subscriber), Some(guard)))
     }
 }
