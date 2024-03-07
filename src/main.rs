@@ -20,7 +20,6 @@ mod services;
 pub mod uitls;
 mod ws;
 
-use tracing::Instrument;
 use tracing_futures::WithSubscriber;
 
 #[derive(clap::Parser, Debug)]
@@ -138,6 +137,7 @@ macro_rules! services_dispatch {
     };
 }
 
+#[tracing::instrument(skip_all, name="Service", fields(name = config.name), )]
 async fn _run(config: &'static ServiceConfig) {
     let listener;
     match tokio::net::TcpListener::bind(config.tcp.addr.clone()).await {
@@ -192,10 +192,7 @@ async fn _run(config: &'static ServiceConfig) {
 async fn run(config: &'static ServiceConfig) {
     match config.logging.init() {
         Some(subscriber) => {
-            _run(config)
-                .instrument(tracing::trace_span!("xxxx", name = config.name))
-                .with_subscriber(subscriber)
-                .await;
+            _run(config).with_subscriber(subscriber).await;
         }
         None => {
             _run(config).await;
