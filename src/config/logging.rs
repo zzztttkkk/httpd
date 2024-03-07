@@ -106,16 +106,18 @@ impl LoggingConfig {
 
         let (appender, guard) = builder.finish(appender);
 
-        let subscriber = tracing_subscriber::fmt()
+        let mut builder = tracing_subscriber::fmt()
             .json()
             .with_ansi(false)
             .with_target(false)
             .with_writer(appender)
-            .with_max_level(level)
-            .with_file(true)
-            .with_line_number(true)
-            .finish();
+            .with_max_level(level);
 
+        if !self.service_name.is_empty() {
+            builder = builder.with_file(true).with_line_number(true);
+        }
+
+        let subscriber = builder.finish();
         Some((Box::new(subscriber), Some(guard)))
     }
 }

@@ -137,7 +137,6 @@ macro_rules! services_dispatch {
     };
 }
 
-#[tracing::instrument(skip_all, name="Service", fields(name = config.name), )]
 async fn _run(config: &'static ServiceConfig) {
     let listener;
     match tokio::net::TcpListener::bind(config.tcp.addr.clone()).await {

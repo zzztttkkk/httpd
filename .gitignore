@@ -1,7 +1,7 @@
 /target
 /.idea
 /.vscode
+/dist
 
-/dist/*.pem
 /httpd.toml
 *.log
