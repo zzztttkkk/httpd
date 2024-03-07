@@ -6,9 +6,6 @@ edition = "2021"
 [profile.release]
 opt-level = 3
 
-[workspace]
-members = ["logging"]
-
 [features]
 
 [dependencies]
@@ -16,7 +13,7 @@ clap = { version = "4.5.1", features = ["derive"] }
 tokio = { version = " 1.36.0", features = ["full"] }
 bytebuffer = "2.2.0"
 glob = { version = "0.3.1" }
-logging = { path = "./logging" }
+smallvec = "1.13.1"
 
 # compression
 flate2 = "1.0.28"

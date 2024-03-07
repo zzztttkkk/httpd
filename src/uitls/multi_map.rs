@@ -1,12 +1,14 @@
 use std::collections::HashMap;
 
+type Pairs = smallvec::SmallVec<[(String, Vec<String>); 16]>;
+
 /// multi value map
 /// used to save http headers/forms
 /// !!! it is the user's responsibility to ensure that the `key` must not be empty.
 #[derive(Debug)]
 pub struct MultiMap {
     ismap: bool,
-    vec: Vec<(String, Vec<String>)>,
+    vec: Pairs,
     map: Option<HashMap<String, Vec<String>>>,
 }
 
@@ -14,7 +16,7 @@ impl Default for MultiMap {
     fn default() -> Self {
         Self {
             ismap: false,
-            vec: vec![],
+            vec: smallvec::smallvec![],
             map: None,
         }
     }
@@ -27,12 +29,12 @@ impl MultiMap {
     }
 
     #[inline]
-    fn vec_find(pairs: &Vec<(String, Vec<String>)>, k: &str) -> Option<usize> {
+    fn vec_find(pairs: &Pairs, k: &str) -> Option<usize> {
         pairs.iter().position(|e| e.0 == k)
     }
 
     #[inline]
-    fn vec_find_or_empty(pairs: &Vec<(String, Vec<String>)>, k: &str) -> Option<usize> {
+    fn vec_find_or_empty(pairs: &Pairs, k: &str) -> Option<usize> {
         pairs.iter().position(|e| e.0 == k || e.0.is_empty())
     }
 
@@ -264,7 +266,7 @@ mod tests {
 
         println!("{:?}", map);
 
-        map.each_mut(&mut |k, vs| {
+        map.each_mut(&mut |_, vs| {
             vs.push("0.0".to_string());
             true
         });

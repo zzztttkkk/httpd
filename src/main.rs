@@ -7,7 +7,6 @@ use crate::{
 };
 use clap::Parser;
 use config::service::ServiceConfig;
-use tracing::{info, trace, Instrument};
 use uitls::anyhow;
 
 mod compression;
@@ -21,6 +20,7 @@ mod services;
 pub mod uitls;
 mod ws;
 
+use tracing::Instrument;
 use tracing_futures::WithSubscriber;
 
 #[derive(clap::Parser, Debug)]
@@ -70,7 +70,7 @@ macro_rules! services_dispatch {
                             Err(e) => {
                                 #[cfg(debug_assertions)]
                                 {
-                                    trace!("accept failed, {}", e);
+                                    tracing::trace!("accept failed, {}", e);
                                 }
                             },
                         }
@@ -91,7 +91,7 @@ macro_rules! services_dispatch {
                                 Err(e) => {
                                     #[cfg(debug_assertions)]
                                     {
-                                        trace!("accept failed, {}", e);
+                                        tracing::trace!("accept failed, {}", e);
                                     }
                                 },
                                 Ok((stream, addr)) => {
@@ -112,7 +112,7 @@ macro_rules! services_dispatch {
                                                     Err(e) => {
                                                         #[cfg(debug_assertions)]
                                                         {
-                                                            trace!("tls handshake failed, {}, {}", addr, e);
+                                                            tracing::trace!("tls handshake failed, {}, {}", addr, e);
                                                         }
                                                     },
                                                 }
@@ -120,7 +120,7 @@ macro_rules! services_dispatch {
                                             None => {
                                                 #[cfg(debug_assertions)]
                                                 {
-                                                    trace!("tls handshake timeout, {}", addr);
+                                                    tracing::trace!("tls handshake timeout, {}", addr);
                                                 }
                                             },
                                         }
@@ -138,7 +138,6 @@ macro_rules! services_dispatch {
     };
 }
 
-#[tracing::instrument(skip(config), fields(name = config.name), name = "Service")]
 async fn _run(config: &'static ServiceConfig) {
     let listener;
     match tokio::net::TcpListener::bind(config.tcp.addr.clone()).await {
@@ -162,7 +161,7 @@ async fn _run(config: &'static ServiceConfig) {
     if tlscfg.is_some() {
         logo = format!("{}, tls ✅", logo);
     }
-    info!("{}", logo);
+    tracing::info!("{}", logo);
 
     match &config.service {
         config::service::Service::HelloWorld => {
@@ -191,14 +190,15 @@ async fn _run(config: &'static ServiceConfig) {
 }
 
 async fn run(config: &'static ServiceConfig) {
-    let mut sub = config.logging.init();
-    let fut = _run(config);
-    match sub.take() {
-        Some(sub) => {
-            fut.in_current_span().with_subscriber(sub).await;
+    match config.logging.init() {
+        Some(subscriber) => {
+            _run(config)
+                .instrument(tracing::trace_span!("xxxx", name = config.name))
+                .with_subscriber(subscriber)
+                .await;
         }
         None => {
-            fut.await;
+            _run(config).await;
         }
     }
 }
@@ -269,17 +269,14 @@ fn main() -> anyhow::Result<()> {
     let config: Config = load_config()?;
     let config: &'static Config = unsafe { std::mem::transmute(&config) };
 
-    let dispatcher = match config.logging.init() {
-        Some(sub) => Some(tracing::dispatcher::Dispatch::new(sub)),
-        None => None,
+    match config.logging.init() {
+        Some(subscriber) => {
+            anyhow::result(tracing::subscriber::set_global_default(subscriber))?;
+        }
+        None => {}
     };
 
-    let _g = match dispatcher.as_ref() {
-        Some(v) => Some(tracing::dispatcher::set_default(v)),
-        None => None,
-    };
-
-    info!("load configuration ok, pid: {}", std::process::id());
+    tracing::info!("load configuration ok, pid: {}", std::process::id());
 
     if config.runtime.per_core.is_some() && config.runtime.per_core.unwrap() {
         run_per_core(config)?;
@@ -287,6 +284,6 @@ fn main() -> anyhow::Result<()> {
         run_multi_threads(config)?;
     }
 
-    info!("shutdown");
+    tracing::info!("shutdown");
     Ok(())
 }

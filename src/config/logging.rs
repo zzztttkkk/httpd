@@ -1,8 +1,5 @@
 use serde::Deserialize;
 use std::str::FromStr;
-use tracing::subscriber;
-use tracing_futures::WithSubscriber;
-use tracing_subscriber::util::SubscriberInitExt;
 
 use crate::uitls::anyhow;
 
@@ -33,6 +30,9 @@ impl LoggingConfig {
 
         match root {
             Some(root) => {
+                if root.disable.is_some() && root.disable.unwrap() {
+                    self.disable = Some(true);
+                }
                 if self.directory.is_empty() {
                     self.directory = format!("{}/{}/", root.directory, self.service_name);
                 }
