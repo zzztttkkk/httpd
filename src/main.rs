@@ -1,12 +1,14 @@
+use std::sync::Arc;
+
 use crate::{
     config::Config,
     services::{
-        forward::ForwardService, fs::FsService, helloworld::HelloWorldService,
+        common::Service, forward::ForwardService, fs::FsService, helloworld::HelloWorldService,
         upstream::UpstreamService,
     },
 };
 use clap::Parser;
-use config::service::ServiceConfig;
+use config::{service::ServiceConfig, tls::TlsConfig};
 use uitls::anyhow;
 
 mod compression;
@@ -19,8 +21,6 @@ mod response;
 mod services;
 pub mod uitls;
 mod ws;
-
-use tracing_futures::WithSubscriber;
 
 #[derive(clap::Parser, Debug)]
 #[command(name = "httpd")]
@@ -52,153 +52,133 @@ fn load_config() -> anyhow::Result<Config> {
     Ok(config)
 }
 
-macro_rules! services_dispatch {
-    ($tlscfg:ident, $listener:ident, $config:ident, $service:ident) => {
-        match $tlscfg {
-            None => loop {
-                tokio::select! {
-                    result = $listener.accept() => {
-                        match result {
-                            Ok((mut stream, addr)) => {
-                                let service = $service.clone();
-                                tokio::spawn(async move {
-                                    let (r,w ) = stream.split();
-                                    service.serve(r, w, addr).await;
-                                });
-                            },
-                            Err(e) => {
-                                #[cfg(debug_assertions)]
-                                {
-                                    tracing::trace!("accept failed, {}", e);
-                                }
-                            },
-                        }
-                    },
-                    _ = tokio::signal::ctrl_c() => {
-                        break;
-                    }
-                }
-            },
-            Some(tlscfg) => {
-                let acceptor = tokio_rustls::TlsAcceptor::from(std::sync::Arc::new(tlscfg));
-                let timeout = $config.tcp.tls.timeout.0.clone();
-
-                loop {
-                    tokio::select! {
-                        result = $listener.accept() => {
-                            match result {
-                                Err(e) => {
-                                    #[cfg(debug_assertions)]
-                                    {
-                                        tracing::trace!("accept failed, {}", e);
-                                    }
-                                },
-                                Ok((stream, addr)) => {
-                                    let acceptor = acceptor.clone();
-                                    let service = $service.clone();
-                                    tokio::spawn(async move {
-                                        let handshake_result = match tokio::time::timeout(timeout, acceptor.accept(stream)).await {
-                                            Ok(r) => Some(r),
-                                            Err(_) => None,
-                                        };
-                                        match handshake_result {
-                                            Some(handshake_result) => {
-                                                match handshake_result {
-                                                    Ok(stream) => {
-                                                        let (r, w) = tokio::io::split(stream);
-                                                        service.serve(r, w, addr).await;
-                                                    },
-                                                    Err(e) => {
-                                                        #[cfg(debug_assertions)]
-                                                        {
-                                                            tracing::trace!("tls handshake failed, {}, {}", addr, e);
-                                                        }
-                                                    },
-                                                }
-                                            },
-                                            None => {
-                                                #[cfg(debug_assertions)]
-                                                {
-                                                    tracing::trace!("tls handshake timeout, {}", addr);
-                                                }
-                                            },
-                                        }
-                                    });
-                                },
-                            }
-                        },
-                        _ = tokio::signal::ctrl_c() => {
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-    };
-}
-
-async fn _run(config: &'static ServiceConfig) {
-    let listener;
-    match tokio::net::TcpListener::bind(config.tcp.addr.clone()).await {
-        Ok(v) => {
-            listener = v;
-        }
-        Err(e) => {
-            tracing::error!("bind failed, {}", e);
-            return;
-        }
-    }
-
-    let tlscfg = config.tcp.tls.load();
-    if tlscfg.is_err() {
-        tracing::error!("load tls failed, {}", tlscfg.err().unwrap());
+async fn accept_loop(
+    listener: tokio::net::TcpListener,
+    tlscfg: Option<tokio_rustls::rustls::ServerConfig>,
+    timeout: std::time::Duration,
+    service: impl Service + Send + Sync + 'static,
+) {
+    if tlscfg.is_some() {
+        tls_accept_loop(listener, tlscfg.unwrap(), timeout, service).await;
         return;
     }
-    let tlscfg = tlscfg.unwrap();
 
+    let service = Arc::new(service);
+    loop {
+        tokio::select! {
+            result = listener.accept() => {
+                match result {
+                    Ok((mut stream, addr)) => {
+                        let service = service.clone();
+                        tokio::spawn(async move {
+                            let (r,w ) = stream.split();
+                            service.serve(r, w, addr).await;
+                        });
+                    },
+                    Err(e) => {
+                        #[cfg(debug_assertions)]
+                        {
+                            log::trace!("accept failed, {}", e);
+                        }
+                    },
+                }
+            },
+            _ = tokio::signal::ctrl_c() => {
+                break;
+            }
+        }
+    }
+}
+
+async fn tls_accept_loop(
+    listener: tokio::net::TcpListener,
+    tlscfg: tokio_rustls::rustls::ServerConfig,
+    timeout: std::time::Duration,
+    service: impl Service + Send + Sync + 'static,
+) {
+    let acceptor = tokio_rustls::TlsAcceptor::from(std::sync::Arc::new(tlscfg));
+    let service = Arc::new(service);
+    loop {
+        tokio::select! {
+            result = listener.accept() => {
+                match result {
+                    Err(e) => {
+                        #[cfg(debug_assertions)]
+                        {
+                            log::trace!("accept failed, {}", e);
+                        }
+                    },
+                    Ok((stream, addr)) => {
+                        let acceptor = acceptor.clone();
+                        let service = service.clone();
+                        tokio::spawn(async move {
+                            let handshake_result = match tokio::time::timeout(timeout, acceptor.accept(stream)).await {
+                                Ok(r) => Some(r),
+                                Err(_) => None,
+                            };
+                            match handshake_result {
+                                Some(handshake_result) => {
+                                    match handshake_result {
+                                        Ok(stream) => {
+                                            let (r, w) = tokio::io::split(stream);
+                                            service.serve(r, w, addr).await;
+                                        },
+                                        Err(e) => {
+                                            #[cfg(debug_assertions)]
+                                            {
+                                                log::trace!("tls handshake failed, {}, {}", addr, e);
+                                            }
+                                        },
+                                    }
+                                },
+                                None => {
+                                    #[cfg(debug_assertions)]
+                                    {
+                                        log::trace!("tls handshake timeout, {}", addr);
+                                    }
+                                },
+                            }
+                        });
+                    },
+                }
+            },
+            _ = tokio::signal::ctrl_c() => {
+                break;
+            }
+        }
+    }
+}
+
+async fn run(config: &'static ServiceConfig) -> anyhow::Result<()> {
+    let listener = anyhow::result(tokio::net::TcpListener::bind(config.tcp.addr.clone()).await)?;
+
+    let tlscfg = anyhow::result(config.tcp.tls.load())?;
     let mut logo = format!("listening @ {}", config.tcp.addr,);
     if tlscfg.is_some() {
         logo = format!("{}, tls ✅", logo);
     }
-    tracing::info!("{}", logo);
+    log::info!("{}", logo);
 
     match &config.service {
         config::service::Service::HelloWorld => {
-            let service = std::sync::Arc::new(HelloWorldService::new(config));
-            services_dispatch!(tlscfg, listener, config, service);
+            let service = HelloWorldService::new(config);
+            accept_loop(listener, tlscfg, config.tcp.tls.timeout.0, service).await;
         }
         config::service::Service::FileSystem { root: _ } => {
-            let service = std::sync::Arc::new(FsService::new(config));
-            services_dispatch!(tlscfg, listener, config, service);
+            let service = FsService::new(config);
+            accept_loop(listener, tlscfg, config.tcp.tls.timeout.0, service).await;
         }
         config::service::Service::Forward {
             target_addr: _,
             rules: _,
-        } => {
-            let service = std::sync::Arc::new(ForwardService::new(config));
-            services_dispatch!(tlscfg, listener, config, service);
-        }
+        } => todo!(),
         config::service::Service::Upstream {
             target_addrs: _,
             rules: _,
-        } => {
-            let service = std::sync::Arc::new(UpstreamService::new(config));
-            services_dispatch!(tlscfg, listener, config, service);
-        }
-    }
-}
+        } => todo!(),
+    };
 
-async fn run(config: &'static ServiceConfig) {
-    let _g;
-    match config.logging.init() {
-        Some((subscriber, guard)) => {
-            _g = guard;
-            _run(config).with_subscriber(subscriber).await;
-        }
-        None => {
-            _run(config).await;
-        }
-    }
+    Ok(())
 }
 
 fn run_multi_threads(config: &'static Config) -> anyhow::Result<()> {
@@ -215,7 +195,10 @@ fn run_multi_threads(config: &'static Config) -> anyhow::Result<()> {
 
         for service in config.services.values() {
             set.spawn(async move {
-                run(service).await;
+                match run(service).await {
+                    Err(err) => {}
+                    _ => {}
+                };
             });
         }
 
@@ -238,7 +221,10 @@ fn run_per_core(config: &'static Config) -> anyhow::Result<()> {
             let builder = builder.enable_all();
             let runtime = anyhow::result(builder.build())?;
             runtime.block_on(async {
-                run(service).await;
+                match run(service).await {
+                    Err(err) => {}
+                    _ => {}
+                };
             });
             Ok(())
         });
@@ -264,19 +250,12 @@ fn run_per_core(config: &'static Config) -> anyhow::Result<()> {
 }
 
 fn main() -> anyhow::Result<()> {
+    anyhow::result(logging::dispatcher::Dispatcher {}.init())?;
+
     let config: Config = load_config()?;
     let config: &'static Config = unsafe { std::mem::transmute(&config) };
 
-    let _g;
-    match config.logging.init() {
-        Some((subscriber, guard)) => {
-            anyhow::result(tracing::subscriber::set_global_default(subscriber))?;
-            _g = guard;
-        }
-        None => {}
-    };
-
-    tracing::info!("load configuration ok, pid: {}", std::process::id());
+    log::info!("load configuration ok, pid: {}", std::process::id());
 
     if config.runtime.per_core.is_some() && config.runtime.per_core.unwrap() {
         run_per_core(config)?;
@@ -284,6 +263,6 @@ fn main() -> anyhow::Result<()> {
         run_multi_threads(config)?;
     }
 
-    tracing::info!("shutdown");
+    log::info!(q = 1; "shutdown");
     Ok(())
 }

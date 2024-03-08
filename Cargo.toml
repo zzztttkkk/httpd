@@ -3,6 +3,9 @@ name = "httpd"
 version = "0.0.1"
 edition = "2021"
 
+[workspace]
+members = ["logging"]
+
 [profile.release]
 opt-level = 3
 
@@ -28,7 +31,5 @@ tokio-rustls = { version = "0.25.0" }
 rustls-pemfile = { version = "2.1.0" }
 
 # loggging
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["json"] }
-tracing-appender = { version = "0.2.3" }
-tracing-futures = { version = "0.2.5" }
+log = { version = "0.4.21", features = ["kv", "std"] }
+logging = { path = "./logging" }
