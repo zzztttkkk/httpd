@@ -250,8 +250,6 @@ fn run_per_core(config: &'static Config) -> anyhow::Result<()> {
 }
 
 fn main() -> anyhow::Result<()> {
-    anyhow::result(logging::dispatcher::Dispatcher {}.init())?;
-
     let config: Config = load_config()?;
     let config: &'static Config = unsafe { std::mem::transmute(&config) };
 

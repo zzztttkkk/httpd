@@ -4,7 +4,7 @@ version = "0.0.1"
 edition = "2021"
 
 [workspace]
-members = ["logging"]
+members = ["logging", "utils"]
 
 [profile.release]
 opt-level = 3
@@ -31,5 +31,5 @@ tokio-rustls = { version = "0.25.0" }
 rustls-pemfile = { version = "2.1.0" }
 
 # loggging
-log = { version = "0.4.21", features = ["kv", "std"] }
+log = { version = "0.4.21", features = ["kv"] }
 logging = { path = "./logging" }
