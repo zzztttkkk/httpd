@@ -1,5 +1,5 @@
 #[derive(Debug, Clone)]
-pub struct MsgError(pub String);
+pub struct MsgError(String);
 
 impl std::fmt::Display for MsgError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -8,6 +8,10 @@ impl std::fmt::Display for MsgError {
 }
 
 pub type Result<T> = std::result::Result<T, MsgError>;
+
+pub fn error<T: std::fmt::Debug, V>(v: &T) -> Result<V> {
+    Err(MsgError(format!("{:?}", v)))
+}
 
 #[inline]
 pub fn result<T>(r: std::result::Result<T, impl std::fmt::Debug>) -> Result<T> {

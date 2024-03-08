@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 log = { version = "0.4.21", features = ["kv"] }
 smallvec = "1.13.1"
+utils = { path = "../utils" }

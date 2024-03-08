@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-use crate::uitls::anyhow;
+use utils::anyhow;
 
 #[derive(Deserialize, Clone, Default, Debug)]
 pub struct RuntimeConfig {

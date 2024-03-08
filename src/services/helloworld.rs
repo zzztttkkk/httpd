@@ -85,7 +85,7 @@ impl Service for HelloWorldService {
         }
     }
 
-    fn init(&mut self) -> crate::uitls::anyhow::Result<()> {
+    fn init(&mut self) -> utils::anyhow::Result<()> {
         todo!()
     }
 }

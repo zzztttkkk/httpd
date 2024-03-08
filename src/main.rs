@@ -9,17 +9,17 @@ use crate::{
 };
 use clap::Parser;
 use config::{service::ServiceConfig, tls::TlsConfig};
-use uitls::anyhow;
+use utils::anyhow;
 
 mod compression;
 mod config;
 mod ctx;
+pub mod internal;
 mod message;
 mod protocols;
 mod request;
 mod response;
 mod services;
-pub mod uitls;
 mod ws;
 
 #[derive(clap::Parser, Debug)]

@@ -4,8 +4,8 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 
 use crate::compression::BoxedWriteCompressionImpl;
 use crate::config::http::HttpConfig;
-use crate::uitls::header;
-use crate::{ctx::ConnContext, uitls::multi_map::MultiMap};
+use crate::internal::header;
+use crate::{ctx::ConnContext, internal::multi_map::MultiMap};
 
 enum ReadState {
     None,
