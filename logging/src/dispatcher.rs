@@ -58,6 +58,26 @@ pub struct Consumer {
 
 impl Consumer {
     fn init(&mut self) -> anyhow::Result<()> {
+        if self.renderers.is_empty() {
+            return anyhow::error("empty renderers");
+        }
+
+        if self.appenders.is_empty() {
+            return anyhow::error("empty appenders");
+        }
+
+        let mut unused_idxes = vec![];
+        'outer: for (ri, rref) in self.renderers.iter().enumerate() {
+            for aref in self.appenders.iter() {
+                if rref.name() == aref.renderer() {
+                    break 'outer;
+                }
+                unused_idxes.push(ri);
+            }
+        }
+
+        self.appenders.clear();
+
         'outer: for (ai, appender) in self.appenders.iter().enumerate() {
             for (ri, renderer) in self.renderers.iter().enumerate() {
                 if appender.renderer() == renderer.name() {
@@ -84,6 +104,11 @@ impl Consumer {
     fn flush(&mut self) {}
 }
 
+enum RAIdx {
+    RIdx(usize),
+    AIdx(usize),
+}
+
 pub fn init(
     appenders: Vec<Box<dyn Appender>>,
     renderers: Vec<Box<dyn Renderer>>,
@@ -101,18 +126,29 @@ pub fn init(
     consumer.init()?;
 
     std::thread::spawn(move || {
-        let comsumer = &mut consumer;
-        for msg in rx {
-            match &msg {
-                Message::Flush(lock) => {
-                    let _g = lock.lock().expect("acquire flush lock failed");
-                    comsumer.flush();
+        tokio::runtime::Builder::new_current_thread()
+            .max_blocking_threads(1)
+            .build()
+            .unwrap()
+            .block_on(async move {
+                let comsumer = &mut consumer;
+
+                let mut idexes: Vec<RAIdx> = Vec::with_capacity(
+                    std::cmp::max(comsumer.appenders.len(), comsumer.renderers.len()) * 3,
+                );
+
+                for msg in rx {
+                    match &msg {
+                        Message::Flush(lock) => {
+                            let _g = lock.lock().expect("acquire flush lock failed");
+                            comsumer.flush();
+                        }
+                        Message::LogItem(item) => {
+                            comsumer.comsume(item);
+                        }
+                    }
                 }
-                Message::LogItem(item) => {
-                    comsumer.comsume(item);
-                }
-            }
-        }
+            })
     });
 
     log::set_max_level(log::Level::Trace.to_level_filter());

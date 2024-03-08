@@ -48,17 +48,17 @@ impl Service {
         match self {
             Service::FileSystem { root } => {
                 if root.is_empty() {
-                    return Err(anyhow::MsgError(format!(
+                    return anyhow::error(&format!(
                         "fs service `{}` get an empty root path",
                         name
-                    )));
+                    ));
                 }
 
                 if !std::path::Path::new(root).exists() {
-                    return Err(anyhow::MsgError(format!(
+                    return anyhow::error(&format!(
                         "fs service `{}` get an non-exists root path `{}`",
                         name, root
-                    )));
+                    ));
                 }
                 Ok(())
             }

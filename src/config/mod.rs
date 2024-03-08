@@ -75,25 +75,25 @@ impl Config {
                         Ok(mut service) => {
                             service.name = service.name.trim().to_string();
                             if service.name.is_empty() {
-                                return Err(anyhow::MsgError(format!(
+                                return anyhow::error(&format!(
                                     "service name is empty in file `{:?}`",
                                     &entry
-                                )));
+                                ));
                             }
 
                             if self.services.contains_key(&service.name) {
-                                return Err(anyhow::MsgError(format!(
+                                return anyhow::error(&format!(
                                     "service name `{}` is exists",
                                     &service.name
-                                )));
+                                ));
                             }
                             self.services.insert(service.name.clone(), service);
                         }
                         Err(e) => {
-                            return Err(anyhow::MsgError(format!(
+                            return anyhow::error(&format!(
                                 "load service failed, from `{:?}`, {:?}",
                                 &entry, e
-                            )));
+                            ));
                         }
                     }
                 }
@@ -145,7 +145,7 @@ impl Config {
             let name = name.to_string();
             let name = name.trim();
             if name.is_empty() {
-                return Err(anyhow::MsgError(format!("empty service name")));
+                return anyhow::error(&format!("empty service name"));
             }
             service.name = name.to_string();
             service.autofix(&self.logging, &self.tcp, &self.http)?

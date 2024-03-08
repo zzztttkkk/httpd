@@ -9,7 +9,7 @@ impl std::fmt::Display for MsgError {
 
 pub type Result<T> = std::result::Result<T, MsgError>;
 
-pub fn error<T: std::fmt::Debug, V>(v: &T) -> Result<V> {
+pub fn error<T: std::fmt::Debug + ?Sized, V>(v: &T) -> Result<V> {
     Err(MsgError(format!("{:?}", v)))
 }
 
