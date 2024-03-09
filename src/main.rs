@@ -253,6 +253,15 @@ fn main() -> anyhow::Result<()> {
     let config: Config = load_config()?;
     let config: &'static Config = unsafe { std::mem::transmute(&config) };
 
+    logging::init(
+        vec![Box::new(logging::ConsoleAppender::new(
+            "ColorfulLineRenderer",
+            |_| true,
+        ))],
+        vec![Box::new(logging::ColorfulLineRenderer::default())],
+    )
+    .unwrap();
+
     log::info!("load configuration ok, pid: {}", std::process::id());
 
     if config.runtime.per_core.is_some() && config.runtime.per_core.unwrap() {
@@ -261,6 +270,6 @@ fn main() -> anyhow::Result<()> {
         run_multi_threads(config)?;
     }
 
-    log::info!(q = 1; "shutdown");
+    log::info!("shutdown");
     Ok(())
 }

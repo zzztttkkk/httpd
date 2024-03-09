@@ -1,3 +1,5 @@
+use core::time;
+
 use crate::item::Item;
 
 pub trait Renderer: Send + Sync {
@@ -55,23 +57,27 @@ fn with_color(buf: &mut Vec<u8>, txt: &str, color: &Option<Color>) {
 
 #[derive(Default)]
 pub struct ColorfulLineRenderer {
+    name: String,
     scheme: ColorScheme,
     timelayout: String,
 }
 
 impl Renderer for ColorfulLineRenderer {
     fn name(&self) -> &str {
-        "ColorfulLineRenderer"
+        if self.name.is_empty() {
+            return "ColorfulLineRenderer";
+        }
+        self.name()
     }
 
     fn render(&self, item: &Item, buf: &mut Vec<u8>) {
         with_color(buf, &format!("{}", item.level.as_str()), &self.scheme.level);
         buf.push(b' ');
 
-        let time: chrono::DateTime<chrono::Utc> = item.time.into();
+        let time: chrono::DateTime<chrono::Local> = item.time.into();
         let time_in_txt;
         if self.timelayout.is_empty() {
-            time_in_txt = time.format("%Y-%m%d %H:%M:%S%.6f %Z");
+            time_in_txt = time.format("%Y-%m-%d %H:%M:%S%.6f %Z");
         } else {
             time_in_txt = time.format(&self.timelayout);
         }
@@ -83,7 +89,6 @@ impl Renderer for ColorfulLineRenderer {
             buf.push(b' ');
         }
 
-        with_color(buf, item.module, &self.scheme.module);
         buf.push(b'(');
         with_color(buf, item.file, &self.scheme.file);
         buf.push(b':');

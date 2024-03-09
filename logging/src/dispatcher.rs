@@ -61,6 +61,10 @@ impl Consumer {
             return anyhow::error("empty appenders");
         }
 
+        for _ in 0..self.appenders.len() {
+            self.map.push(0);
+        }
+
         let mut unused_renderer_idxes = vec![];
         'outer: for (ri, rref) in self.renderers.iter().enumerate() {
             for aref in self.appenders.iter() {
@@ -107,6 +111,7 @@ impl Consumer {
         for ridx in ridxes {
             let buf = unsafe { render_bufs.get_unchecked_mut(ridx) };
             let renderer = unsafe { self.renderers.get_unchecked(ridx) };
+            buf.clear();
             renderer.render(item, buf);
         }
 
