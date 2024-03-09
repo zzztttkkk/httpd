@@ -5,7 +5,7 @@ use utils::anyhow;
 use crate::{appender::FilterFn, item::Item, Appender};
 
 pub struct FileAppender {
-    fp: tokio::fs::File,
+    inner: tokio::io::BufWriter<tokio::fs::File>,
     filter_ptr: FilterFn,
     rendername: String,
 }
@@ -18,7 +18,7 @@ impl tokio::io::AsyncWrite for FileAppender {
         buf: &[u8],
     ) -> std::task::Poll<Result<usize, std::io::Error>> {
         let this = self.get_mut();
-        let fp = Pin::new(&mut this.fp);
+        let fp = Pin::new(&mut this.inner);
         fp.poll_write(cx, buf)
     }
 
@@ -28,7 +28,7 @@ impl tokio::io::AsyncWrite for FileAppender {
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<(), std::io::Error>> {
         let this = self.get_mut();
-        let fp = Pin::new(&mut this.fp);
+        let fp = Pin::new(&mut this.inner);
         fp.poll_flush(cx)
     }
 
@@ -38,7 +38,7 @@ impl tokio::io::AsyncWrite for FileAppender {
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<(), std::io::Error>> {
         let this = self.get_mut();
-        let fp = Pin::new(&mut this.fp);
+        let fp = Pin::new(&mut this.inner);
         fp.poll_shutdown(cx)
     }
 }
@@ -56,7 +56,12 @@ impl Appender for FileAppender {
 }
 
 impl FileAppender {
-    pub async fn new(fp: &str, renderer: &str, filter: FilterFn) -> anyhow::Result<Self> {
+    pub async fn new(
+        fp: &str,
+        bufsize: usize,
+        renderer: &str,
+        filter: FilterFn,
+    ) -> anyhow::Result<Self> {
         let fp = tokio::fs::File::options()
             .append(true)
             .create(true)
@@ -66,13 +71,18 @@ impl FileAppender {
         let fp = anyhow::result(fp)?;
 
         Ok(Self {
-            fp,
+            inner: tokio::io::BufWriter::with_capacity(bufsize, fp),
             rendername: renderer.to_string(),
             filter_ptr: filter,
         })
     }
 
-    pub fn sync(fp: &str, renderer: &str, filter: FilterFn) -> anyhow::Result<Self> {
+    pub fn sync(
+        fp: &str,
+        bufsize: usize,
+        renderer: &str,
+        filter: FilterFn,
+    ) -> anyhow::Result<Self> {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build();
@@ -82,7 +92,7 @@ impl FileAppender {
         let ptrc = ptr.clone();
         runtime.block_on(async move {
             let mut ptr = ptrc.lock().unwrap();
-            *ptr = Some(Self::new(fp, renderer, filter).await)
+            *ptr = Some(Self::new(fp, bufsize, renderer, filter).await)
         });
 
         std::mem::drop(runtime);

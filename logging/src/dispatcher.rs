@@ -1,14 +1,13 @@
-use tokio::io::AsyncWriteExt;
 use utils::anyhow;
 
-use crate::{appender::Renderer, item::Item, Appender};
+use crate::{appender::Renderer, consumer::Consumer, item::Item, Appender};
 
 enum Message {
-    Flush(std::sync::Arc<std::sync::Mutex<()>>),
+    Flush(std::sync::Arc<std::sync::atomic::AtomicBool>),
     LogItem(Item),
 }
 
-pub struct Dispatcher {
+struct Dispatcher {
     sx: std::sync::mpsc::Sender<Message>,
 }
 
@@ -24,126 +23,16 @@ impl log::Log for Dispatcher {
     }
 
     fn flush(&self) {
-        let lock = std::sync::Arc::new(std::sync::Mutex::new(()));
+        let lock = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         self.sx
             .send(Message::Flush(lock.clone()))
             .expect("logging: send flush message failed");
 
         loop {
-            match lock.try_lock() {
-                Ok(g) => {
-                    std::mem::drop(g);
-                    std::thread::sleep(std::time::Duration::from_millis(3));
-                }
-                Err(_) => {
-                    break;
-                }
+            if lock.load(std::sync::atomic::Ordering::SeqCst) {
+                break;
             }
-        }
-
-        _ = lock.lock();
-    }
-}
-
-pub struct Consumer {
-    appenders: Vec<Box<dyn Appender>>,
-    renderers: Vec<Box<dyn Renderer>>,
-    map: Vec<usize>,
-}
-
-impl Consumer {
-    fn init(&mut self) -> anyhow::Result<()> {
-        if self.renderers.is_empty() {
-            return anyhow::error("empty renderers");
-        }
-
-        if self.appenders.is_empty() {
-            return anyhow::error("empty appenders");
-        }
-
-        for _ in 0..self.appenders.len() {
-            self.map.push(0);
-        }
-
-        let mut unused_renderer_idxes = vec![];
-        'outer: for (ri, rref) in self.renderers.iter().enumerate() {
-            for aref in self.appenders.iter() {
-                if rref.name() == aref.renderer() {
-                    break 'outer;
-                }
-                unused_renderer_idxes.push(ri);
-            }
-        }
-        unused_renderer_idxes.iter().for_each(|i| {
-            self.renderers.remove(*i);
-        });
-
-        'outer: for (ai, appender) in self.appenders.iter().enumerate() {
-            for (ri, renderer) in self.renderers.iter().enumerate() {
-                if appender.renderer() == renderer.name() {
-                    self.map[ai] = ri;
-                    break 'outer;
-                }
-            }
-            return anyhow::error(&format!("renderer `{}` not found", appender.renderer()));
-        }
-        Ok(())
-    }
-
-    async fn comsume(&mut self, item: &Item, render_bufs: &mut Vec<Vec<u8>>) {
-        let mut ridxes: smallvec::SmallVec<[usize; 12]> = smallvec::smallvec![];
-        let mut armap: smallvec::SmallVec<[usize; 12]> = smallvec::smallvec![];
-        let mut appenders: smallvec::SmallVec<[&mut Box<dyn Appender>; 12]> = smallvec::smallvec![];
-        for (aidx, appender) in self.appenders.iter_mut().enumerate() {
-            if !appender.filter(item) {
-                continue;
-            }
-            appenders.push(appender);
-            let ridx = *unsafe { self.map.get_unchecked(aidx) };
-            armap.push(ridx);
-
-            if ridxes.contains(&ridx) {
-                continue;
-            }
-            ridxes.push(ridx);
-        }
-
-        for ridx in ridxes {
-            let buf = unsafe { render_bufs.get_unchecked_mut(ridx) };
-            let renderer = unsafe { self.renderers.get_unchecked(ridx) };
-            buf.clear();
-            renderer.render(item, buf);
-        }
-
-        let mut fs = vec![];
-        for (idx, appender) in appenders.iter_mut().enumerate() {
-            let buf = unsafe { render_bufs.get_unchecked(*(armap.get_unchecked(idx))) };
-            fs.push(appender.write_all(&buf));
-        }
-
-        for wr in futures::future::join_all(fs).await {
-            match wr {
-                Err(e) => {
-                    eprintln!("logging: write failed, {}", e);
-                }
-                _ => {}
-            }
-        }
-    }
-
-    async fn flush(&mut self) {
-        let mut fs = vec![];
-        for appender in self.appenders.iter_mut() {
-            fs.push(appender.flush());
-        }
-
-        for wr in futures::future::join_all(fs).await {
-            match wr {
-                Err(e) => {
-                    eprintln!("logging: flush failed, {}", e);
-                }
-                _ => {}
-            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
         }
     }
 }
@@ -165,34 +54,45 @@ pub fn init(
     consumer.init()?;
 
     std::thread::spawn(move || {
-        tokio::runtime::Builder::new_current_thread()
+        let runtime = tokio::runtime::Builder::new_current_thread()
             .max_blocking_threads(1)
             .build()
-            .unwrap()
-            .block_on(async move {
-                let mut render_bufs = Vec::with_capacity(consumer.renderers.len());
-                for _ in 0..consumer.renderers.len() {
-                    render_bufs.push(Vec::<u8>::default());
-                }
+            .unwrap();
 
-                let consumer = tokio::sync::Mutex::new(consumer);
+        runtime.block_on(async move {
+            let mut render_bufs = Vec::with_capacity(consumer.renderers.len());
+            for _ in 0..consumer.renderers.len() {
+                render_bufs.push(Vec::<u8>::default());
+            }
+            let consumer = tokio::sync::Mutex::new(consumer);
 
-                for msg in rx {
-                    match msg {
-                        Message::Flush(lock) => {
-                            let _g = lock.lock().unwrap();
-                            let mut consumer = consumer.lock().await;
-                            consumer.flush().await;
-                        }
-                        Message::LogItem(ref item) => {
-                            let mut consumer = consumer.lock().await;
-                            consumer.comsume(item, &mut render_bufs).await;
+            macro_rules! consume {
+                ($rx:ident, $render_bufs:ident, $consumer:ident, $method:ident) => {
+                    for msg in $rx {
+                        match msg {
+                            Message::Flush(lock) => {
+                                let mut consumer = $consumer.lock().await;
+                                consumer.flush().await;
+                                lock.store(true, std::sync::atomic::Ordering::SeqCst);
+                            }
+                            Message::LogItem(ref item) => {
+                                let mut consumer = $consumer.lock().await;
+                                consumer.$method(item, &mut $render_bufs).await;
+                            }
                         }
                     }
-                }
-            })
+                };
+            }
+
+            if render_bufs.len() == 1 {
+                consume!(rx, render_bufs, consumer, consume_when_single_renderer);
+            } else {
+                consume!(rx, render_bufs, consumer, comsume);
+            }
+        })
     });
 
     log::set_max_level(log::Level::Trace.to_level_filter());
+
     anyhow::result(log::set_logger(Box::leak(ptr)))
 }

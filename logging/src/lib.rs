@@ -4,6 +4,7 @@ mod console_appender;
 mod dispatcher;
 mod file_appender;
 mod item;
+mod consumer;
 
 pub use appender::{Appender, Renderer};
 pub use colorful_line_renderer::{Color, ColorScheme, ColorfulLineRenderer};

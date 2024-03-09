@@ -34,3 +34,4 @@ rustls-pemfile = { version = "2.1.0" }
 # loggging
 log = { version = "0.4.21", features = ["kv"] }
 logging = { path = "./logging" }
+futures = "0.3.30"

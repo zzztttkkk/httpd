@@ -8,7 +8,7 @@ use crate::{
     },
 };
 use clap::Parser;
-use config::{service::ServiceConfig, tls::TlsConfig};
+use config::service::ServiceConfig;
 use utils::anyhow;
 
 mod compression;
@@ -191,10 +191,10 @@ fn run_multi_threads(config: &'static Config) -> anyhow::Result<()> {
     let runtime = anyhow::result(builder.build())?;
 
     runtime.block_on(async {
-        let mut set = tokio::task::JoinSet::new();
+        let mut fs = vec![];
 
         for service in config.services.values() {
-            set.spawn(async move {
+            fs.push(async move {
                 match run(service).await {
                     Err(err) => {}
                     _ => {}
@@ -202,7 +202,7 @@ fn run_multi_threads(config: &'static Config) -> anyhow::Result<()> {
             });
         }
 
-        while let Some(_) = set.join_next().await {}
+        futures::future::join_all(fs).await;
     });
 
     Ok(())
@@ -261,6 +261,7 @@ fn main() -> anyhow::Result<()> {
             )),
             Box::new(logging::FileAppender::sync(
                 "./log/test.log",
+                1024 * 8,
                 "ColorfulLineRenderer",
                 Box::new(|_| true),
             )?),
@@ -278,5 +279,6 @@ fn main() -> anyhow::Result<()> {
     }
 
     log::info!("shutdown");
+    log::logger().flush();
     Ok(())
 }
