@@ -254,10 +254,17 @@ fn main() -> anyhow::Result<()> {
     let config: &'static Config = unsafe { std::mem::transmute(&config) };
 
     logging::init(
-        vec![Box::new(logging::ConsoleAppender::new(
-            "ColorfulLineRenderer",
-            |_| true,
-        ))],
+        vec![
+            Box::new(logging::ConsoleAppender::new(
+                "ColorfulLineRenderer",
+                Box::new(|_| true),
+            )),
+            Box::new(logging::FileAppender::sync(
+                "./log/test.log",
+                "ColorfulLineRenderer",
+                Box::new(|_| true),
+            )?),
+        ],
         vec![Box::new(logging::ColorfulLineRenderer::default())],
     )
     .unwrap();
