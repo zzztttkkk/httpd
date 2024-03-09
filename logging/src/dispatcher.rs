@@ -1,12 +1,7 @@
-use std::fmt::format;
-
+use tokio::io::AsyncWriteExt;
 use utils::anyhow;
 
-use crate::{
-    appender::{self, Renderer},
-    item::Item,
-    Appender,
-};
+use crate::{appender::Renderer, item::Item, Appender};
 
 enum Message {
     Flush(std::sync::Arc<std::sync::Mutex<()>>),
@@ -66,17 +61,18 @@ impl Consumer {
             return anyhow::error("empty appenders");
         }
 
-        let mut unused_idxes = vec![];
+        let mut unused_renderer_idxes = vec![];
         'outer: for (ri, rref) in self.renderers.iter().enumerate() {
             for aref in self.appenders.iter() {
                 if rref.name() == aref.renderer() {
                     break 'outer;
                 }
-                unused_idxes.push(ri);
+                unused_renderer_idxes.push(ri);
             }
         }
-
-        self.appenders.clear();
+        unused_renderer_idxes.iter().for_each(|i| {
+            self.renderers.remove(*i);
+        });
 
         'outer: for (ai, appender) in self.appenders.iter().enumerate() {
             for (ri, renderer) in self.renderers.iter().enumerate() {
@@ -90,23 +86,61 @@ impl Consumer {
         Ok(())
     }
 
-    fn comsume(&mut self, item: &Item) {
-        let appenders = self
-            .appenders
-            .iter_mut()
-            .enumerate()
-            .filter(|(_, aref)| aref.filter(item));
+    async fn comsume(&mut self, item: &Item, render_bufs: &mut Vec<Vec<u8>>) {
+        let mut ridxes: smallvec::SmallVec<[usize; 12]> = smallvec::smallvec![];
+        let mut armap: smallvec::SmallVec<[usize; 12]> = smallvec::smallvec![];
+        let mut appenders: smallvec::SmallVec<[&mut Box<dyn Appender>; 12]> = smallvec::smallvec![];
+        for (aidx, appender) in self.appenders.iter_mut().enumerate() {
+            if !appender.filter(item) {
+                continue;
+            }
+            appenders.push(appender);
+            let ridx = *unsafe { self.map.get_unchecked(aidx) };
+            armap.push(ridx);
 
-        let fc = self.renderers.len();
-        for x in appenders {}
+            if ridxes.contains(&ridx) {
+                continue;
+            }
+            ridxes.push(ridx);
+        }
+
+        for ridx in ridxes {
+            let buf = unsafe { render_bufs.get_unchecked_mut(ridx) };
+            let renderer = unsafe { self.renderers.get_unchecked(ridx) };
+            renderer.render(item, buf);
+        }
+
+        let mut fs = vec![];
+        for (idx, appender) in appenders.iter_mut().enumerate() {
+            let buf = unsafe { render_bufs.get_unchecked(*(armap.get_unchecked(idx))) };
+            fs.push(appender.write_all(&buf));
+        }
+
+        for wr in futures::future::join_all(fs).await {
+            match wr {
+                Err(e) => {
+                    eprintln!("logging: write failed, {}", e);
+                }
+                _ => {}
+            }
+        }
     }
 
-    fn flush(&mut self) {}
-}
+    async fn flush(&mut self) {
+        let mut fs = vec![];
+        for appender in self.appenders.iter_mut() {
+            fs.push(appender.flush());
+        }
 
-enum RAIdx {
-    RIdx(usize),
-    AIdx(usize),
+        for wr in futures::future::join_all(fs).await {
+            match wr {
+                Err(e) => {
+                    eprintln!("logging: flush failed, {}", e);
+                }
+                _ => {}
+            }
+        }
+    }
 }
 
 pub fn init(
@@ -131,20 +165,23 @@ pub fn init(
             .build()
             .unwrap()
             .block_on(async move {
-                let comsumer = &mut consumer;
+                let mut render_bufs = Vec::with_capacity(consumer.renderers.len());
+                for _ in 0..consumer.renderers.len() {
+                    render_bufs.push(Vec::<u8>::default());
+                }
 
-                let mut idexes: Vec<RAIdx> = Vec::with_capacity(
-                    std::cmp::max(comsumer.appenders.len(), comsumer.renderers.len()) * 3,
-                );
+                let consumer = tokio::sync::Mutex::new(consumer);
 
                 for msg in rx {
-                    match &msg {
+                    match msg {
                         Message::Flush(lock) => {
-                            let _g = lock.lock().expect("acquire flush lock failed");
-                            comsumer.flush();
+                            let _g = lock.lock().unwrap();
+                            let mut consumer = consumer.lock().await;
+                            consumer.flush().await;
                         }
-                        Message::LogItem(item) => {
-                            comsumer.comsume(item);
+                        Message::LogItem(ref item) => {
+                            let mut consumer = consumer.lock().await;
+                            consumer.comsume(item, &mut render_bufs).await;
                         }
                     }
                 }
