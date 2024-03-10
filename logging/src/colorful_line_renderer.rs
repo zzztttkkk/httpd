@@ -72,7 +72,7 @@ impl Renderer for ColorfulLineRenderer {
         with_color(buf, &time_in_txt.to_string(), &self.scheme.time);
         buf.push(b' ');
 
-        if item.target.is_empty() {
+        if !item.target.is_empty() {
             with_color(buf, &item.target, &self.scheme.target);
             buf.push(b' ');
         }

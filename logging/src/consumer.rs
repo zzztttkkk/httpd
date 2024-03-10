@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use tokio::io::AsyncWriteExt;
 use utils::anyhow;
 
@@ -9,7 +11,24 @@ pub(crate) struct Consumer {
     pub(crate) map: Vec<usize>,
 }
 
+fn unique(names: impl Iterator<Item = String>) -> bool {
+    let mut ns = HashSet::new();
+    let mut c = 0;
+
+    for n in names {
+        ns.insert(n.to_lowercase());
+        c += 1;
+    }
+    ns.len() == c
+}
+
 impl Consumer {
+    fn ridx(&self, name: &str) -> Option<usize> {
+        self.renderers
+            .iter()
+            .position(|r| r.name().eq_ignore_ascii_case(name))
+    }
+
     pub(crate) fn init(&mut self) -> anyhow::Result<()> {
         if self.renderers.is_empty() {
             return anyhow::error("empty renderers");
@@ -19,32 +38,24 @@ impl Consumer {
             return anyhow::error("empty appenders");
         }
 
-        for _ in 0..self.appenders.len() {
-            self.map.push(0);
+        if !unique(self.renderers.iter().map(|r| r.name().to_string())) {
+            return anyhow::error("repeated renderers");
         }
 
-        let mut unused_renderer_idxes = vec![];
-        'outer: for (ri, rref) in self.renderers.iter().enumerate() {
-            for aref in self.appenders.iter() {
-                if rref.name() == aref.renderer() {
-                    break 'outer;
+        for appender in self.appenders.iter() {
+            match self.ridx(appender.renderer()) {
+                Some(ridx) => {
+                    self.map.push(ridx);
                 }
-                unused_renderer_idxes.push(ri);
+                None => {
+                    return anyhow::error(&format!(
+                        "renderer `{}` is not found",
+                        appender.renderer()
+                    ));
+                }
             }
         }
-        unused_renderer_idxes.iter().for_each(|i| {
-            self.renderers.remove(*i);
-        });
 
-        'outer: for (ai, appender) in self.appenders.iter().enumerate() {
-            for (ri, renderer) in self.renderers.iter().enumerate() {
-                if appender.renderer() == renderer.name() {
-                    self.map[ai] = ri;
-                    break 'outer;
-                }
-            }
-            return anyhow::error(&format!("renderer `{}` not found", appender.renderer()));
-        }
         Ok(())
     }
 

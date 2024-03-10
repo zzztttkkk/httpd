@@ -18,6 +18,7 @@ bytebuffer = "2.2.0"
 glob = { version = "0.3.1" }
 smallvec = { version = "1.13.1" }
 utils = { path = "./utils" }
+futures = { version = "0.3.30" }
 
 # compression
 flate2 = { version = "1.0.28" }
@@ -34,4 +35,3 @@ rustls-pemfile = { version = "2.1.0" }
 # loggging
 log = { version = "0.4.21", features = ["kv"] }
 logging = { path = "./logging" }
-futures = "0.3.30"

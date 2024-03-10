@@ -254,6 +254,7 @@ fn main() -> anyhow::Result<()> {
     let config: &'static Config = unsafe { std::mem::transmute(&config) };
 
     logging::init(
+        None,
         vec![
             Box::new(logging::ConsoleAppender::new(
                 "ColorfulLineRenderer",
@@ -262,13 +263,16 @@ fn main() -> anyhow::Result<()> {
             Box::new(logging::FileAppender::sync(
                 "./log/test.log",
                 1024 * 8,
-                "ColorfulLineRenderer",
+                "JsonLineRenderer",
                 Box::new(|_| true),
             )?),
+            
         ],
-        vec![Box::new(logging::ColorfulLineRenderer::default())],
-    )
-    .unwrap();
+        vec![
+            Box::new(logging::ColorfulLineRenderer::default()),
+            Box::new(logging::JsonLineRenderer::default()),
+        ],
+    )?;
 
     log::info!("load configuration ok, pid: {}", std::process::id());
 
