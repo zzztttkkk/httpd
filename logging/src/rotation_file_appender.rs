@@ -1,6 +1,6 @@
 use std::{future::Future, pin::Pin, task::Poll};
 
-use tokio::io::{AsyncWrite, AsyncWriteExt};
+use tokio::io::AsyncWrite;
 use utils::luxon;
 
 use crate::{Appender, FileAppender};
@@ -61,13 +61,32 @@ impl<'a> Future for Rotation<'a> {
                 let fut = Pin::new(fut);
                 match fut.poll(cx) {
                     Poll::Ready(result) => match result {
-                        Ok(_) => Poll::Pending,
+                        Ok(_) => {
+                            *this.stage = RotationStage::Reopen(Box::pin(async {
+                                let mut opt = tokio::fs::File::options();
+                                let opt = opt.append(true).write(true).create(true);
+                                opt.open("path").await
+                            }));
+                            Poll::Pending
+                        }
                         Err(e) => Poll::Ready(Err(e)),
                     },
                     Poll::Pending => Poll::Pending,
                 }
             }
-            RotationStage::Reopen(_) => todo!(),
+            RotationStage::Reopen(fut) => {
+                let fut = Pin::new(fut);
+                match fut.poll(cx) {
+                    Poll::Ready(result) => match result {
+                        Ok(file) => {
+                            this.file.reopen(file);
+                            Poll::Ready(Ok(()))
+                        }
+                        Err(e) => Poll::Ready(Err(e)),
+                    },
+                    Poll::Pending => Poll::Pending,
+                }
+            }
         }
     }
 }
@@ -85,10 +104,9 @@ impl tokio::io::AsyncWrite for RotationFileAppender {
         buf: &[u8],
     ) -> std::task::Poll<Result<usize, std::io::Error>> {
         let this = self.get_mut();
-        let inner = Pin::new(&mut this.inner);
 
-        let v = inner.poll_write(cx, buf);
-        v
+        let inner = Pin::new(&mut this.inner);
+        inner.poll_write(cx, buf)
     }
 
     fn poll_flush(
