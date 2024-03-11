@@ -191,18 +191,24 @@ fn run_multi_threads(config: &'static Config) -> anyhow::Result<()> {
     let runtime = anyhow::result(builder.build())?;
 
     runtime.block_on(async {
-        let mut fs = vec![];
-
+        let mut set = tokio::task::JoinSet::new();
         for service in config.services.values() {
-            fs.push(async move {
-                match run(service).await {
-                    Err(err) => {}
-                    _ => {}
-                };
-            });
+            set.spawn(async move { run(service).await });
         }
 
-        futures::future::join_all(fs).await;
+        while let Some(result) = set.join_next().await {
+            match result {
+                Err(e) => {
+                    log::error!("join error, {:?}", e);
+                }
+                Ok(result) => match result {
+                    Err(e) => {
+                        log::error!("service serve error, {:?}", e);
+                    }
+                    _ => {}
+                },
+            }
+        }
     });
 
     Ok(())
@@ -222,7 +228,9 @@ fn run_per_core(config: &'static Config) -> anyhow::Result<()> {
             let runtime = anyhow::result(builder.build())?;
             runtime.block_on(async {
                 match run(service).await {
-                    Err(err) => {}
+                    Err(err) => {
+                        log::error!("service serve error, {:?}", err);
+                    }
                     _ => {}
                 };
             });
@@ -266,7 +274,6 @@ fn main() -> anyhow::Result<()> {
                 "JsonLineRenderer",
                 Box::new(|_| true),
             )?),
-            
         ],
         vec![
             Box::new(logging::ColorfulLineRenderer::default()),
@@ -285,4 +292,41 @@ fn main() -> anyhow::Result<()> {
     log::info!("shutdown");
     log::logger().flush();
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_wait_all() {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async {
+                let mut fs = vec![];
+
+                for _ in 0..10 {
+                    fs.push(tokio::time::sleep(std::time::Duration::from_secs(1)));
+                }
+
+                println!(
+                    "BEGIN: {}",
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_millis()
+                );
+                for f in fs {
+                    f.await
+                }
+
+                println!(
+                    "END: {}",
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_millis()
+                );
+            });
+    }
 }
