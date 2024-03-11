@@ -6,6 +6,7 @@ mod dispatcher;
 mod file_appender;
 mod item;
 mod json_line_renderer;
+mod rotation_file_appender;
 
 pub use appender::{Appender, Renderer};
 pub use colorful_line_renderer::{Color, ColorScheme, ColorfulLineRenderer};

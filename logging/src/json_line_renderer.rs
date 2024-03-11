@@ -1,3 +1,5 @@
+use utils::luxon;
+
 use crate::Renderer;
 
 #[derive(Debug, Default)]
@@ -33,12 +35,11 @@ impl Renderer for JsonLineRenderer {
 
         push_with_quote!("time");
         buf.push(b':');
-        let time: chrono::DateTime<chrono::Local> = item.time.into();
         let time_in_txt;
         if self.timelayout.is_empty() {
-            time_in_txt = time.format("%Y-%m-%d %H:%M:%S%.6f %Z");
+            time_in_txt = luxon::fmtlocal(item.time, "%Y-%m-%d %H:%M:%S%.6f %Z");
         } else {
-            time_in_txt = time.format(&self.timelayout);
+            time_in_txt = luxon::fmtlocal(item.time, &self.timelayout);
         }
         push_with_quote!(&time_in_txt.to_string());
 

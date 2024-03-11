@@ -1,3 +1,5 @@
+use utils::luxon;
+
 use crate::{item::Item, Renderer};
 
 #[derive(Default)]
@@ -62,12 +64,11 @@ impl Renderer for ColorfulLineRenderer {
         with_color(buf, &format!("{}", item.level.as_str()), &self.scheme.level);
         buf.push(b' ');
 
-        let time: chrono::DateTime<chrono::Local> = item.time.into();
         let time_in_txt;
         if self.timelayout.is_empty() {
-            time_in_txt = time.format("%Y-%m-%d %H:%M:%S%.6f %Z");
+            time_in_txt = luxon::fmtlocal(item.time, "%Y-%m-%d %H:%M:%S%.6f %Z");
         } else {
-            time_in_txt = time.format(&self.timelayout);
+            time_in_txt = luxon::fmtlocal(item.time, &self.timelayout);
         }
         with_color(buf, &time_in_txt.to_string(), &self.scheme.time);
         buf.push(b' ');

@@ -85,8 +85,8 @@ impl Consumer {
             fs.push(appender.write_all(&buf));
         }
 
-        for wr in futures::future::join_all(fs).await {
-            match wr {
+        for f in fs {
+            match f.await {
                 Err(e) => {
                     eprintln!("logging: write failed, {}", e);
                 }
@@ -131,13 +131,13 @@ impl Consumer {
             fs.push(appender.write_all(&buf));
         }
 
-        for wr in futures::future::join_all(fs).await {
-            match wr {
+        for f in fs {
+            match f.await {
                 Err(e) => {
                     eprintln!("logging: write failed, {}", e);
                 }
                 _ => {}
-            }
+            };
         }
     }
 
@@ -147,8 +147,8 @@ impl Consumer {
             fs.push(appender.flush());
         }
 
-        for wr in futures::future::join_all(fs).await {
-            match wr {
+        for f in fs {
+            match f.await {
                 Err(e) => {
                     eprintln!("logging: flush failed, {}", e);
                 }

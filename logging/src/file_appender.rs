@@ -1,4 +1,4 @@
-use std::pin::Pin;
+use std::{env::set_current_dir, io::BufRead, pin::Pin};
 
 use utils::anyhow;
 
@@ -99,5 +99,9 @@ impl FileAppender {
 
         let mut ptr = ptr.lock().unwrap();
         ptr.take().unwrap()
+    }
+
+    pub(crate) fn reopen(&mut self, file: tokio::fs::File) {
+        self.inner = tokio::io::BufWriter::with_capacity(4096, file)
     }
 }
