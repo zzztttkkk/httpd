@@ -1,6 +1,6 @@
 use std::{future::Future, pin::Pin, task::Poll};
 
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncWrite, AsyncWriteExt};
 use utils::luxon;
 
 use crate::{Appender, FileAppender};
@@ -9,7 +9,7 @@ type IoFuture<T> = Pin<Box<dyn Future<Output = std::io::Result<T>> + Send + Sync
 
 enum RotationStage {
     None(u64),
-    Flush(IoFuture<()>),               // flush file
+    Flush,                             // flush file
     Rename(IoFuture<()>),              // rename current log file
     Reopen(IoFuture<tokio::fs::File>), // reset file
 }
@@ -32,54 +32,24 @@ impl<'a> Future for Rotation<'a> {
         self: Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Self::Output> {
-        let this = self.get_mut();
-        match &mut this.stage {
-            RotationStage::None(time) => {
+        let this = self.project();
+
+        match this.stage {
+            RotationStage::None(at) => {
                 let now = luxon::unix();
-                if now < *time {
+                if now < *at {
                     return Poll::Ready(Ok(()));
                 }
-                let f = Box::pin(this.file.flush());
-                this.stage = RotationStage::Flush(f);
+                *this.stage = RotationStage::Flush;
                 Poll::Pending
             }
-            RotationStage::Flush(ff) => {
-                let ff = Pin::new(ff);
-                match ff.poll(cx) {
+            RotationStage::Flush => {
+                let file = Pin::new(&mut *this.file);
+                match file.poll_flush(cx) {
                     Poll::Ready(result) => match result {
                         Ok(_) => {
-                            this.stage = RotationStage::Rename(Box::pin(tokio::fs::rename(
-                                this.fp.clone(),
-                                "to",
-                            )));
-                            return Poll::Pending;
-                        }
-                        Err(e) => {
-                            return Poll::Ready(Err(e));
-                        }
-                    },
-                    Poll::Pending => {
-                        return Poll::Pending;
-                    }
-                }
-            }
-            RotationStage::Rename(rf) => {
-                let rf = Pin::new(rf);
-                match rf.poll(cx) {
-                    Poll::Ready(result) => match result {
-                        Ok(_) => {
-                            let fp = this.fp.clone();
-                            this.stage = RotationStage::Reopen(Box::pin(async move {
-                                match tokio::fs::File::options()
-                                    .create(true)
-                                    .append(true)
-                                    .open(fp)
-                                    .await
-                                {
-                                    Ok(f) => Ok(f),
-                                    Err(e) => Err(e),
-                                }
-                            }));
+                            *this.stage =
+                                RotationStage::Rename(Box::pin(tokio::fs::rename("", "")));
                             Poll::Pending
                         }
                         Err(e) => Poll::Ready(Err(e)),
@@ -87,19 +57,17 @@ impl<'a> Future for Rotation<'a> {
                     Poll::Pending => Poll::Pending,
                 }
             }
-            RotationStage::Reopen(rf) => {
-                let rf = Pin::new(rf);
-                match rf.poll(cx) {
+            RotationStage::Rename(fut) => {
+                let fut = Pin::new(fut);
+                match fut.poll(cx) {
                     Poll::Ready(result) => match result {
-                        Ok(file) => {
-                            this.file.reopen(file);
-                            Poll::Ready(Ok(()))
-                        }
+                        Ok(_) => Poll::Pending,
                         Err(e) => Poll::Ready(Err(e)),
                     },
                     Poll::Pending => Poll::Pending,
                 }
             }
+            RotationStage::Reopen(_) => todo!(),
         }
     }
 }
