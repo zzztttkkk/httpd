@@ -439,8 +439,8 @@ name = "logging"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "chrono",
  "log",
- "pin-project-lite",
  "serde",
  "serde_json",
  "smallvec",
