@@ -6,5 +6,6 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-smallvec = "1.13.1"
-chrono = "0.4.35"
+smallvec = { version = "1.13.1" }
+chrono = { version = "0.4.35" }
+tokio = { version = "1.36.0", features = ["full"] }
