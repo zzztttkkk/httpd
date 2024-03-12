@@ -1,9 +1,8 @@
 use std::collections::HashSet;
 
-use tokio::io::AsyncWriteExt;
 use utils::anyhow;
 
-use crate::{item::Item, Appender, Renderer};
+use crate::{appender::Appender, appender::Renderer, item::Item};
 
 pub(crate) struct Consumer {
     pub(crate) appenders: Vec<Box<dyn Appender>>,
@@ -82,7 +81,7 @@ impl Consumer {
 
         let mut fs = vec![];
         for appender in appenders.iter_mut() {
-            fs.push(appender.write_all(&buf));
+            fs.push(appender.writeall(&buf));
         }
 
         for f in fs {
@@ -128,7 +127,7 @@ impl Consumer {
         let mut fs = vec![];
         for (idx, appender) in appenders.iter_mut().enumerate() {
             let buf = unsafe { render_bufs.get_unchecked(*(armap.get_unchecked(idx))) };
-            fs.push(appender.write_all(&buf));
+            fs.push(appender.writeall(&buf));
         }
 
         for f in fs {

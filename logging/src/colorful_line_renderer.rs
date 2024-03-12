@@ -1,6 +1,6 @@
 use utils::luxon;
 
-use crate::{item::Item, Renderer};
+use crate::{appender::Renderer, item::Item};
 
 #[derive(Default)]
 pub struct Color(pub u8, pub u8, pub u8);

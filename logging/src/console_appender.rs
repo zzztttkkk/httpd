@@ -1,62 +1,36 @@
-use std::pin::Pin;
+use tokio::io::AsyncWriteExt;
 
-use crate::{appender::FilterFn, item::Item, Appender};
+use crate::{appender::Appender, appender::FilterFn, item::Item};
 
 pub struct ConsoleAppender {
-    rendername: String,
+    name: String,
     filter_ptr: FilterFn,
     inner: tokio::io::Stdout,
 }
 
-impl tokio::io::AsyncWrite for ConsoleAppender {
-    #[inline]
-    fn poll_write(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        buf: &[u8],
-    ) -> std::task::Poll<Result<usize, std::io::Error>> {
-        let this = self.get_mut();
-        let inner = Pin::new(&mut this.inner);
-        inner.poll_write(cx, buf)
-    }
-
-    #[inline]
-    fn poll_flush(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), std::io::Error>> {
-        let this = self.get_mut();
-        let inner = Pin::new(&mut this.inner);
-        inner.poll_flush(cx)
-    }
-
-    #[inline]
-    fn poll_shutdown(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), std::io::Error>> {
-        let this = self.get_mut();
-        let inner = Pin::new(&mut this.inner);
-        inner.poll_shutdown(cx)
-    }
-}
-
+#[async_trait::async_trait]
 impl Appender for ConsoleAppender {
-    #[inline]
-    fn renderer(&self) -> &str {
-        &self.rendername
+    async fn writeall(&mut self, buf: &[u8]) -> std::io::Result<()> {
+        self.inner.write_all(buf).await
     }
 
-    #[inline]
+    async fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush().await
+    }
+
+    fn renderer(&self) -> &str {
+        &self.name
+    }
+
     fn filter(&self, item: &Item) -> bool {
-        (&self.filter_ptr)(item)
+        (self.filter_ptr)(item)
     }
 }
 
 impl ConsoleAppender {
     pub fn new(renderer: &str, filter: FilterFn) -> Self {
         Self {
-            rendername: renderer.to_string(),
+            name: renderer.to_string(),
             filter_ptr: filter,
             inner: tokio::io::stdout(),
         }

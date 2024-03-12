@@ -1,8 +1,7 @@
-use std::{env::set_current_dir, io::BufRead, pin::Pin};
-
+use tokio::io::AsyncWriteExt;
 use utils::anyhow;
 
-use crate::{appender::FilterFn, item::Item, Appender};
+use crate::{appender::Appender, appender::FilterFn, item::Item};
 
 pub struct FileAppender {
     inner: tokio::io::BufWriter<tokio::fs::File>,
@@ -10,39 +9,7 @@ pub struct FileAppender {
     rendername: String,
 }
 
-impl tokio::io::AsyncWrite for FileAppender {
-    #[inline]
-    fn poll_write(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        buf: &[u8],
-    ) -> std::task::Poll<Result<usize, std::io::Error>> {
-        let this = self.get_mut();
-        let fp = Pin::new(&mut this.inner);
-        fp.poll_write(cx, buf)
-    }
-
-    #[inline]
-    fn poll_flush(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), std::io::Error>> {
-        let this = self.get_mut();
-        let fp = Pin::new(&mut this.inner);
-        fp.poll_flush(cx)
-    }
-
-    #[inline]
-    fn poll_shutdown(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), std::io::Error>> {
-        let this = self.get_mut();
-        let fp = Pin::new(&mut this.inner);
-        fp.poll_shutdown(cx)
-    }
-}
-
+#[async_trait::async_trait]
 impl Appender for FileAppender {
     #[inline]
     fn renderer(&self) -> &str {
@@ -52,6 +19,14 @@ impl Appender for FileAppender {
     #[inline]
     fn filter(&self, item: &Item) -> bool {
         (self.filter_ptr)(item)
+    }
+
+    async fn writeall(&mut self, buf: &[u8]) -> std::io::Result<()> {
+        self.inner.write_all(buf).await
+    }
+
+    async fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush().await
     }
 }
 
