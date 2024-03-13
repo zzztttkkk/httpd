@@ -8,4 +8,4 @@ edition = "2021"
 [dependencies]
 smallvec = { version = "1.13.1" }
 chrono = { version = "0.4.35" }
-tokio = { version = "1.36.0", features = ["full"] }
+async-trait = "0.1.77"

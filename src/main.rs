@@ -268,7 +268,7 @@ fn main() -> anyhow::Result<()> {
                 "ColorfulLineRenderer",
                 Box::new(|_| true),
             )),
-            Box::new(logging::FileAppender::sync(
+            Box::new(logging::FileAppender::new(
                 "./log/test.log",
                 1024 * 8,
                 "JsonLineRenderer",

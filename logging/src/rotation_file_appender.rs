@@ -1,133 +1,25 @@
-use std::{future::Future, pin::Pin, task::Poll};
-
-use tokio::io::AsyncWrite;
+use tokio::io::{AsyncWrite, AsyncWriteExt};
 use utils::luxon;
 
-use crate::{Appender, FileAppender};
+use crate::{appender::Appender, file_appender::FileAppender};
 
-type IoFuture<T> = Pin<Box<dyn Future<Output = std::io::Result<T>> + Send + Sync>>;
-
-enum RotationStage {
-    None(u64),
-    Flush,                             // flush file
-    Rename(IoFuture<()>),              // rename current log file
-    Reopen(IoFuture<tokio::fs::File>), // reset file
-}
-
-pin_project_lite::pin_project! {
-    struct Rotation<'a> {
-        file: &'a mut FileAppender,
-        fp: String,
-        stage: RotationStage,
-
-        #[pin]
-        _pin: std::marker::PhantomPinned,
-    }
-}
-
-impl<'a> Future for Rotation<'a> {
-    type Output = std::io::Result<()>;
-
-    fn poll(
-        self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Self::Output> {
-        let this = self.project();
-
-        match this.stage {
-            RotationStage::None(at) => {
-                let now = luxon::unix();
-                if now < *at {
-                    return Poll::Ready(Ok(()));
-                }
-                *this.stage = RotationStage::Flush;
-                Poll::Pending
-            }
-            RotationStage::Flush => {
-                let file = Pin::new(&mut *this.file);
-                match file.poll_flush(cx) {
-                    Poll::Ready(result) => match result {
-                        Ok(_) => {
-                            *this.stage =
-                                RotationStage::Rename(Box::pin(tokio::fs::rename("", "")));
-                            Poll::Pending
-                        }
-                        Err(e) => Poll::Ready(Err(e)),
-                    },
-                    Poll::Pending => Poll::Pending,
-                }
-            }
-            RotationStage::Rename(fut) => {
-                let fut = Pin::new(fut);
-                match fut.poll(cx) {
-                    Poll::Ready(result) => match result {
-                        Ok(_) => {
-                            *this.stage = RotationStage::Reopen(Box::pin(async {
-                                let mut opt = tokio::fs::File::options();
-                                let opt = opt.append(true).write(true).create(true);
-                                opt.open("path").await
-                            }));
-                            Poll::Pending
-                        }
-                        Err(e) => Poll::Ready(Err(e)),
-                    },
-                    Poll::Pending => Poll::Pending,
-                }
-            }
-            RotationStage::Reopen(fut) => {
-                let fut = Pin::new(fut);
-                match fut.poll(cx) {
-                    Poll::Ready(result) => match result {
-                        Ok(file) => {
-                            this.file.reopen(file);
-                            Poll::Ready(Ok(()))
-                        }
-                        Err(e) => Poll::Ready(Err(e)),
-                    },
-                    Poll::Pending => Poll::Pending,
-                }
-            }
-        }
-    }
+pub enum RotationKind {
+    Hourly,
+    Daily,
 }
 
 pub struct RotationFileAppender {
     inner: FileAppender,
-    stage: RotationStage,
-    fp: String,
+
+    rat: u128,
+    kind: RotationKind,
+
+    name_prefix: String,
+    base_name: String,
+    file_ext: String,
 }
 
-impl tokio::io::AsyncWrite for RotationFileAppender {
-    fn poll_write(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        buf: &[u8],
-    ) -> std::task::Poll<Result<usize, std::io::Error>> {
-        let this = self.get_mut();
-
-        let inner = Pin::new(&mut this.inner);
-        inner.poll_write(cx, buf)
-    }
-
-    fn poll_flush(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), std::io::Error>> {
-        let this = self.get_mut();
-        let inner = Pin::new(&mut this.inner);
-        inner.poll_flush(cx)
-    }
-
-    fn poll_shutdown(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), std::io::Error>> {
-        let this = self.get_mut();
-        let inner = Pin::new(&mut this.inner);
-        inner.poll_shutdown(cx)
-    }
-}
-
+#[async_trait::async_trait]
 impl Appender for RotationFileAppender {
     fn renderer(&self) -> &str {
         todo!()
@@ -135,5 +27,48 @@ impl Appender for RotationFileAppender {
 
     fn filter(&self, item: &crate::item::Item) -> bool {
         todo!()
+    }
+
+    async fn writeall(&mut self, buf: &[u8]) -> std::io::Result<()> {
+        match self.inner.writeall(buf).await {
+            Ok(_) => {
+                self.rotate().await;
+                return Ok(());
+            }
+            Err(e) => {
+                if self.rotate().await {
+                    return self.inner.writeall(buf).await;
+                }
+                return Err(e);
+            }
+        }
+    }
+
+    async fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush().await
+    }
+}
+
+impl RotationFileAppender {
+    async fn rotate(&mut self) -> bool {
+
+        let now = luxon::unixmills();
+        if now < self.rat {
+            return false;
+        }
+
+        let newname;
+        match self.kind {
+            RotationKind::Hourly => {
+                newname = format!("{}{}{}", &self.name_prefix, &self.base_name, "");
+            }
+            RotationKind::Daily => {
+                newname = format!("{}{}{}", &self.name_prefix, &self.base_name, "");
+            }
+        }
+
+        for _ in 0..10 {}
+
+        true
     }
 }

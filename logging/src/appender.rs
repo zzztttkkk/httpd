@@ -5,7 +5,10 @@ pub trait Renderer: Send + Sync {
     fn render(&self, item: &Item, buf: &mut Vec<u8>);
 }
 
-pub trait Appender: tokio::io::AsyncWrite + Unpin + Send + Sync {
+#[async_trait::async_trait]
+pub trait Appender: Send + Sync {
+    async fn writeall(&mut self, buf: &[u8]) -> std::io::Result<()>;
+    async fn flush(&mut self) -> std::io::Result<()>;
     fn renderer(&self) -> &str; // renderer name
     fn filter(&self, item: &Item) -> bool;
 }

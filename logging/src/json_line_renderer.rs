@@ -1,6 +1,6 @@
 use utils::luxon;
 
-use crate::Renderer;
+use crate::appender::Renderer;
 
 #[derive(Debug, Default)]
 pub struct JsonLineRenderer {
