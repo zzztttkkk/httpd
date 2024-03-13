@@ -7,6 +7,7 @@ pub struct FileAppender {
     inner: tokio::io::BufWriter<tokio::fs::File>,
     filter_ptr: FilterFn,
     rendername: String,
+    bufsize: usize,
 }
 
 #[async_trait::async_trait]
@@ -31,8 +32,13 @@ impl Appender for FileAppender {
 }
 
 impl FileAppender {
+    #[inline]
+    pub(crate) fn open(fp: &str) -> std::io::Result<std::fs::File> {
+        std::fs::File::options().append(true).create(true).open(fp)
+    }
+
     pub fn new(fp: &str, bufsize: usize, renderer: &str, filter: FilterFn) -> anyhow::Result<Self> {
-        let fp = anyhow::result(std::fs::File::options().append(true).create(true).open(fp))?;
+        let fp = anyhow::result(Self::open(fp))?;
 
         let fp = tokio::fs::File::from_std(fp);
 
@@ -40,10 +46,20 @@ impl FileAppender {
             inner: tokio::io::BufWriter::with_capacity(bufsize, fp),
             rendername: renderer.to_string(),
             filter_ptr: filter,
+            bufsize,
         })
     }
 
-    pub(crate) fn reopen(&mut self, file: tokio::fs::File) {
-        self.inner = tokio::io::BufWriter::with_capacity(4096, file)
+    #[inline]
+    pub(crate) async fn reopen(&mut self, fp: &str) -> anyhow::Result<()> {
+        let fp = anyhow::result(
+            tokio::fs::File::options()
+                .append(true)
+                .create(true)
+                .open(fp)
+                .await,
+        )?;
+        self.inner = tokio::io::BufWriter::with_capacity(self.bufsize, fp);
+        Ok(())
     }
 }
