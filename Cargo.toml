@@ -6,6 +6,9 @@ edition = "2021"
 [workspace]
 members = ["logging", "utils"]
 
+[profile.dev]
+opt-level = 0
+
 [profile.release]
 opt-level = 3
 
