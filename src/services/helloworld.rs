@@ -1,7 +1,10 @@
 use std::io::Write;
 
 use crate::{
-    config::service::ServiceConfig, ctx::ConnContext, message::Message, request::RequestQueryer,
+    config::service::ServiceConfig,
+    ctx::ConnContext,
+    message::{Message, MessageReadCode},
+    request::RequestQueryer,
     response::ResponseBuilder,
 };
 
@@ -47,6 +50,13 @@ impl Service for HelloWorldService {
                     crate::message::MessageReadCode::Ok => {
                         match reqmsg.read_const_length_body(&mut ctx).await {
                             crate::message::MessageReadCode::Ok => {
+                                match reqmsg.body.end() {
+                                    Ok(_) => {}
+                                    Err(e) => {
+                                        log::trace!("decompression failed, {}", e);
+                                    }
+                                }
+
                                 let request = RequestQueryer::new(reqmsg);
                                 log::trace!(
                                     "receive request: {}, {} {} {}",
@@ -55,6 +65,30 @@ impl Service for HelloWorldService {
                                     request.url(),
                                     request.version()
                                 );
+
+                                request.headers().each(&mut |k, vs| {
+                                    for v in vs {
+                                        log::trace!("Header: {}: {}", k, v);
+                                    }
+                                    true
+                                });
+
+                                let body = request.body();
+                                if body.size() < 1 {
+                                    log::trace!("EmptyBody");
+                                } else {
+                                    match std::str::from_utf8(body.inner()) {
+                                        Ok(txt) => {
+                                            log::trace!(
+                                                "PrintableBody:\r\n>>>>>>>>>>>>>>>>>>>\r\n{}\r\n>>>>>>>>>>>>>>>>>>>",
+                                                txt
+                                            );
+                                        }
+                                        Err(_) => {
+                                            log::trace!("BinaryBody: {}", body.size());
+                                        }
+                                    }
+                                }
 
                                 match resp.write_to(&mut ctx).await {
                                     Ok(_) => {
@@ -68,7 +102,16 @@ impl Service for HelloWorldService {
                                 }
                             }
                             e => {
-                                log::trace!("read http request body failed, {}, {:?}", addr, e);
+                                #[cfg(debug_assertions)]
+                                {
+                                    if e != MessageReadCode::ConnReadError {
+                                        log::trace!(
+                                            "read http request body failed, {}, {:?}",
+                                            addr,
+                                            e
+                                        );
+                                    }
+                                }
                                 break;
                             }
                         }
@@ -76,7 +119,9 @@ impl Service for HelloWorldService {
                     e => {
                         #[cfg(debug_assertions)]
                         {
-                            log::trace!("read http request headers failed, {}, {:?}", addr, e);
+                            if e != MessageReadCode::ConnReadError {
+                                log::trace!("read http request headers failed, {}, {:?}", addr, e);
+                            }
                         }
                         break;
                     }

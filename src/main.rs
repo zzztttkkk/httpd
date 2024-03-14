@@ -263,22 +263,11 @@ fn main() -> anyhow::Result<()> {
 
     logging::init(
         None,
-        vec![
-            Box::new(logging::ConsoleAppender::new(
-                "ColorfulLineRenderer",
-                Box::new(|_| true),
-            )),
-            Box::new(logging::FileAppender::new(
-                "./log/test.log",
-                1024 * 8,
-                "JsonLineRenderer",
-                Box::new(|_| true),
-            )?),
-        ],
-        vec![
-            Box::new(logging::ColorfulLineRenderer::default()),
-            Box::new(logging::JsonLineRenderer::default()),
-        ],
+        vec![Box::new(logging::ConsoleAppender::new(
+            "ColorfulLineRenderer",
+            Box::new(|_| true),
+        ))],
+        vec![Box::new(logging::ColorfulLineRenderer::default())],
     )?;
 
     log::info!("load configuration ok, pid: {}", std::process::id());

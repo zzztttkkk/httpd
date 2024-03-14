@@ -71,12 +71,6 @@ impl Renderer for ColorfulLineRenderer {
             time_in_txt = luxon::fmtlocal(item.time, &self.timelayout);
         }
         with_color(buf, &time_in_txt.to_string(), &self.scheme.time);
-        buf.push(b' ');
-
-        if !item.target.is_empty() {
-            with_color(buf, &item.target, &self.scheme.target);
-            buf.push(b' ');
-        }
 
         buf.push(b'(');
         with_color(buf, item.file, &self.scheme.file);

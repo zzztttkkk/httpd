@@ -45,14 +45,6 @@ impl Renderer for JsonLineRenderer {
 
         buf.push(b',');
 
-        if !item.target.is_empty() {
-            push_with_quote!("target");
-            buf.push(b':');
-            push_with_quote!(item.target);
-        }
-
-        buf.push(b',');
-
         push_with_quote!("lineno");
         buf.push(b':');
         push_with_quote!(format!("{}:{}", item.file, item.line));

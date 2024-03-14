@@ -1,6 +1,7 @@
 use crate::{
     ctx::ConnContext,
-    message::{Message, MessageReadCode},
+    internal::multi_map::MultiMap,
+    message::{Message, MessageBody, MessageReadCode},
 };
 
 pub struct RequestQueryer<'a> {
@@ -22,5 +23,13 @@ impl<'a> RequestQueryer<'a> {
 
     pub fn version(&self) -> &String {
         &self.msg.firstline.2
+    }
+
+    pub fn headers(&self) -> &MultiMap {
+        &self.msg.headers
+    }
+
+    pub fn body(&self) -> &MessageBody {
+        &self.msg.body
     }
 }

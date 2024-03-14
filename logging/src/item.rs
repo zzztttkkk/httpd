@@ -3,7 +3,6 @@ type Kvs = smallvec::SmallVec<[(String, String); 16]>;
 pub struct Item {
     pub time: std::time::SystemTime,
     pub level: log::Level,
-    pub target: String,
     pub file: &'static str,
     pub line: u32,
     pub msg: String,
@@ -29,7 +28,6 @@ impl std::convert::From<&log::Record<'_>> for Item {
         let mut item = Item {
             time: std::time::SystemTime::now(),
             level: value.level(),
-            target: value.target().to_string(),
             file: value.file_static().map_or("", |v| v),
             line: value.line().map_or(0, |v| v),
             msg: format!("{}", value.args()),

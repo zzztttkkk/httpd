@@ -128,7 +128,7 @@ pub(crate) struct Message {
     pub(crate) body: MessageBody,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub(crate) enum MessageReadCode {
     Ok,
     ConnReadError,
@@ -148,6 +148,8 @@ macro_rules! read_const_length_body_impl {
         }
 
         let bufcap = $buf.capacity();
+        unsafe { $buf.set_len(bufcap) };
+
         loop {
             let mut _buf = $buf.as_mut_slice();
             if $remain_size < bufcap {
@@ -172,6 +174,8 @@ macro_rules! read_const_length_body_impl {
 macro_rules! read_chunked_body_impl {
     ($self:ident, $reader:ident, $buf:ident, $max_body_size:ident, $write:ident) => {
         let bufcap = $buf.capacity();
+        unsafe { $buf.set_len(bufcap) };
+
         let mut lenline = String::with_capacity(128);
         let mut remain_size: usize;
         let mut read_size: usize = 0;
@@ -226,11 +230,6 @@ macro_rules! read_chunked_body_impl {
             }
         }
     };
-}
-
-#[inline]
-fn is_latin_1_graphic(b: u8) -> bool {
-    matches!(b, b' '..=b'~' | b'\xa0'..=b'\xff')
 }
 
 impl Message {
@@ -348,10 +347,10 @@ impl Message {
         let buf = &mut ctx.buf;
         let config = &(ctx.config.http);
 
-        macro_rules! ensure_lantin_1 {
+        macro_rules! ensure_ascii {
             ($bytes:expr) => {
                 for b in ($bytes) {
-                    if !is_latin_1_graphic(*b) {
+                    if !b.is_ascii_graphic() && *b != b' ' {
                         return MessageReadCode::BadDatagram;
                     }
                 }
@@ -368,10 +367,10 @@ impl Message {
                     match reader.take(128).read_until(b' ', dest).await {
                         Ok(size) => {
                             if size < 1 {
-                                return MessageReadCode::BadDatagram;
+                                return MessageReadCode::ConnReadError;
                             }
                             unsafe { dest.set_len(size - 1) }; // safety: trim last space and len check in front
-                            ensure_lantin_1!(dest);
+                            ensure_ascii!(dest);
                             state = ReadState::FirstLine0;
                             continue;
                         }
@@ -389,10 +388,10 @@ impl Message {
                     {
                         Ok(size) => {
                             if size < 1 {
-                                return MessageReadCode::BadDatagram;
+                                return MessageReadCode::ConnReadError;
                             }
                             unsafe { dest.set_len(size - 1) }; // safety: trim last space and len check in front
-                            ensure_lantin_1!(dest);
+                            ensure_ascii!(dest);
                             state = ReadState::FirstLine1;
                             continue;
                         }
@@ -409,7 +408,7 @@ impl Message {
                             }
                             let bytes = unsafe { (&mut self.firstline.2).as_mut_vec() }; // safety: trim `\r\n` and len check in front
                             unsafe { bytes.set_len(size - 2) };
-                            ensure_lantin_1!(bytes);
+                            ensure_ascii!(bytes);
                             state = ReadState::FirstLine2;
                             continue;
                         }
@@ -443,7 +442,7 @@ impl Message {
                                 keyidx = 0;
                                 for idx in 0..buf.len() {
                                     let c = buf[idx];
-                                    if !is_latin_1_graphic(c) {
+                                    if !c.is_ascii_graphic() && c != b' ' {
                                         return MessageReadCode::BadDatagram;
                                     }
 
@@ -459,7 +458,7 @@ impl Message {
                                         }
 
                                         // safety: not calling `std::str::from_utf8`, because i only want ascii chars in the header value
-                                        ensure_lantin_1!(&buf[(idx + 1)..]);
+                                        ensure_ascii!(&buf[(idx + 1)..]);
                                         let value: &str = unsafe {
                                             std::str::from_utf8_unchecked(&buf[(idx + 1)..])
                                         }
@@ -478,7 +477,8 @@ impl Message {
                                     }
                                     // safety: boundary check in front
                                     unsafe {
-                                        *(keytmp.get_unchecked_mut(keyidx)) = c;
+                                        *(keytmp.get_unchecked_mut(keyidx)) =
+                                            c.to_ascii_lowercase();
                                     }
                                     keyidx += 1;
                                 }
