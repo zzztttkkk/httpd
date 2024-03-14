@@ -19,6 +19,8 @@ mod message;
 mod protocols;
 mod request;
 mod response;
+mod respw;
+mod serve;
 mod services;
 mod ws;
 
@@ -56,11 +58,13 @@ async fn accept_loop(
     listener: tokio::net::TcpListener,
     tlscfg: Option<tokio_rustls::rustls::ServerConfig>,
     timeout: std::time::Duration,
-    service: impl Service + Send + Sync + 'static,
-) {
+    mut service: impl Service + Send + Sync + 'static,
+) -> anyhow::Result<()> {
+    (service.init().await)?;
+
     if tlscfg.is_some() {
         tls_accept_loop(listener, tlscfg.unwrap(), timeout, service).await;
-        return;
+        return Ok(());
     }
 
     let service = Arc::new(service);
@@ -72,7 +76,7 @@ async fn accept_loop(
                         let service = service.clone();
                         tokio::spawn(async move {
                             let (r,w ) = stream.split();
-                            service.serve(r, w, addr).await;
+                            serve::serve(service, r, w, addr, true).await;
                         });
                     },
                     Err(e) => {
@@ -88,6 +92,8 @@ async fn accept_loop(
             }
         }
     }
+
+    Ok(())
 }
 
 async fn tls_accept_loop(
@@ -121,7 +127,7 @@ async fn tls_accept_loop(
                                     match handshake_result {
                                         Ok(stream) => {
                                             let (r, w) = tokio::io::split(stream);
-                                            service.serve(r, w, addr).await;
+                                            serve::serve(service, r, w, addr, false).await;
                                         },
                                         Err(e) => {
                                             #[cfg(debug_assertions)]
@@ -162,11 +168,11 @@ async fn run(config: &'static ServiceConfig) -> anyhow::Result<()> {
     match &config.service {
         config::service::Service::HelloWorld => {
             let service = HelloWorldService::new(config);
-            accept_loop(listener, tlscfg, config.tcp.tls.timeout.0, service).await;
+            (accept_loop(listener, tlscfg, config.tcp.tls.timeout.0, service).await)?;
         }
         config::service::Service::FileSystem { root: _ } => {
             let service = FsService::new(config);
-            accept_loop(listener, tlscfg, config.tcp.tls.timeout.0, service).await;
+            (accept_loop(listener, tlscfg, config.tcp.tls.timeout.0, service).await)?;
         }
         config::service::Service::Forward {
             target_addr: _,
