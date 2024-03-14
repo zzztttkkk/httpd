@@ -27,11 +27,19 @@ pub(crate) async fn serve<
                     crate::message::MessageReadCode::Ok => {
                         match service.handle(&ctx, &mut reqmsg, &mut respmsg).await {
                             Ok(_) => {
-                                // TODO keep-alive
+                                match (&mut respmsg).write_to(&mut ctx).await {
+                                    Ok(_) => {
+                                        // TODO keep-alive
 
-                                reqmsg.clear();
-                                respmsg.clear();
-                                continue;
+                                        reqmsg.clear();
+                                        respmsg.clear();
+                                        continue;
+                                    }
+                                    Err(e) => {
+                                        log::debug!("send response failed, {}", e);
+                                        break;
+                                    }
+                                }
                             }
                             Err(e) => {
                                 log::error!(service=cfg.name.as_str(); "handle failed, {}", e);

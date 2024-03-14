@@ -101,6 +101,7 @@ impl MessageBody {
         }
     }
 
+    #[inline]
     pub(crate) fn end(&mut self) -> std::io::Result<()> {
         match self.cw.take() {
             Some(cw) => self.internal = Some(cw.expose()?),
@@ -109,6 +110,7 @@ impl MessageBody {
         Ok(())
     }
 
+    #[inline]
     pub(crate) fn size(&self) -> usize {
         match self.internal.as_ref() {
             Some(buf) => buf.len(),
@@ -116,8 +118,18 @@ impl MessageBody {
         }
     }
 
+    pub(crate) fn is_empty(&self) -> bool {
+        self.size() == 0
+    }
+
+    #[inline]
     pub(crate) fn inner(&self) -> &[u8] {
         self.internal.as_ref().unwrap().as_bytes()
+    }
+
+    #[inline]
+    pub(crate) fn write_all_to_internal(&mut self, buf: &[u8]) {
+        _ = self.internal.as_mut().unwrap().write_all(buf);
     }
 }
 

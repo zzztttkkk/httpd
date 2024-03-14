@@ -99,5 +99,7 @@ mod tests {
         println!("{:?}", local(12, 12, 3, 23, 14, 45, 566));
 
         println!("{:?} {:?}", endofhour(None), endofday(None));
+
+        println!("{}", chrono::Local::now().to_rfc2822());
     }
 }

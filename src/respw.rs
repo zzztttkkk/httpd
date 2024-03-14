@@ -44,4 +44,9 @@ impl<'a> ResponseWriter<'a> {
         self.msg.headers.delete(k);
         self
     }
+
+    #[inline]
+    pub fn end(self) -> &'a mut Message {
+        self.msg
+    }
 }
