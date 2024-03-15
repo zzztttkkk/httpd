@@ -1,6 +1,6 @@
 use utils::anyhow;
 
-use crate::{config::service::ServiceConfig, message::Message};
+use crate::{config::service::ServiceConfig, message::Message, protocols::Protocol};
 
 use super::common::Service;
 
@@ -31,7 +31,7 @@ impl Service for FsService {
         ctx: &crate::ctx::ConnContext<R, W>,
         req: &mut Message,
         resp: &mut Message,
-    ) -> impl std::future::Future<Output = anyhow::Result<()>> + Send {
-        async { Ok(()) }
+    ) -> impl std::future::Future<Output = anyhow::Result<Protocol>> + Send {
+        async { Ok(Protocol::Current { keep_alive: true }) }
     }
 }

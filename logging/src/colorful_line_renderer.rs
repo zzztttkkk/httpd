@@ -85,3 +85,34 @@ impl Renderer for ColorfulLineRenderer {
         buf.extend(" }\r\n".as_bytes());
     }
 }
+
+pub struct ColorfulLineRendererBuilder {
+    ins: ColorfulLineRenderer,
+}
+
+impl ColorfulLineRendererBuilder {
+    pub fn new() -> Self {
+        Self {
+            ins: Default::default(),
+        }
+    }
+
+    pub fn with_name(&mut self, name: &str) -> &mut Self {
+        self.ins.name = name.to_string();
+        self
+    }
+
+    pub fn with_shceme(&mut self, scheme: ColorScheme) -> &mut Self {
+        self.ins.scheme = scheme;
+        self
+    }
+
+    pub fn with_timelayout(&mut self, layout: &str) -> &mut Self {
+        self.ins.timelayout = layout.to_string();
+        self
+    }
+
+    pub fn finish(self) -> ColorfulLineRenderer {
+        self.ins
+    }
+}

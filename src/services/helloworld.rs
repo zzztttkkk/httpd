@@ -1,15 +1,8 @@
-use std::io::Write;
-
 use utils::anyhow;
 
 use crate::{
-    config::service::ServiceConfig,
-    ctx::ConnContext,
-    message::{Message, MessageReadCode},
-    reqr::RequestReader,
-    request::RequestQueryer,
-    response::ResponseBuilder,
-    respw::ResponseWriter,
+    config::service::ServiceConfig, ctx::ConnContext, message::Message, protocols::Protocol,
+    reqr::RequestReader, respw::ResponseWriter,
 };
 
 use super::common::Service;
@@ -39,7 +32,7 @@ impl Service for HelloWorldService {
         ctx: &ConnContext<R, W>,
         req: &mut Message,
         resp: &mut Message,
-    ) -> impl std::future::Future<Output = anyhow::Result<()>> + Send {
+    ) -> impl std::future::Future<Output = anyhow::Result<Protocol>> + Send {
         let reqversion;
 
         {
@@ -70,6 +63,8 @@ impl Service for HelloWorldService {
         }
 
         async move {
+            let mut keep_alive = true;
+
             let resp = {
                 let mut w = ResponseWriter::from(resp);
                 w.version(1, 1).code(200, "OK").header("server", "httpd.rs");
@@ -77,6 +72,7 @@ impl Service for HelloWorldService {
                 match reqversion {
                     Ok((major, minor)) => {
                         w.version(major, minor);
+                        keep_alive = major >= 1 && minor >= 1;
                     }
                     Err(_) => {}
                 }
@@ -84,7 +80,8 @@ impl Service for HelloWorldService {
                 w.end()
             };
             resp.body.write_all_to_internal("Hello world!".as_bytes());
-            Ok(())
+
+            Ok(Protocol::Current { keep_alive })
         }
     }
 }

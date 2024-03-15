@@ -2,8 +2,11 @@ use std::sync::Arc;
 
 use crate::{
     ctx::ConnContext,
+    http2,
     message::{Message, MessageReadCode},
+    protocols::Protocol,
     services::common::Service,
+    ws,
 };
 
 pub(crate) async fn serve<
@@ -31,41 +34,48 @@ pub(crate) async fn serve<
 
     loop {
         match reqmsg.read_headers(&mut ctx).await {
-            MessageReadCode::Ok => {
-                match reqmsg.read_const_length_body(&mut ctx).await {
-                    MessageReadCode::Ok => {
-                        match service.http(&ctx, &mut reqmsg, &mut respmsg).await {
-                            Ok(_) => {
-                                match (&mut respmsg).write_to(&mut ctx).await {
-                                    Ok(_) => {
-                                        // TODO keep-alive
-
-                                        reqmsg.clear();
-                                        respmsg.clear();
-                                        continue;
-                                    }
-                                    Err(e) => {
-                                        log::debug!("send response failed, {}", e);
+            MessageReadCode::Ok => match reqmsg.read_const_length_body(&mut ctx).await {
+                MessageReadCode::Ok => {
+                    match service.http(&ctx, &mut reqmsg, &mut respmsg).await {
+                        Ok(next_protocol) => match (&mut respmsg).write_to(&mut ctx).await {
+                            Ok(_) => match next_protocol {
+                                Protocol::Current { keep_alive } => {
+                                    if !keep_alive {
                                         break;
                                     }
+                                    reqmsg.clear();
+                                    respmsg.clear();
+                                    continue;
                                 }
-                            }
+                                Protocol::WebSocket => {
+                                    ws::serve(ctx, reqmsg).await;
+                                    return;
+                                }
+                                Protocol::Http2 => {
+                                    http2::serve(ctx, reqmsg).await;
+                                    return;
+                                }
+                            },
                             Err(e) => {
-                                log::error!(service=cfg.name.as_str(); "handle failed, {}", e);
+                                log::debug!("send response failed, {}", e);
                                 break;
                             }
-                        };
-                    }
-                    MessageReadCode::ConnReadError => todo!(),
-                    e => {
-                        #[cfg(debug_assertions)]
-                        {
-                            log::trace!("read request body failed, {:?}", e);
+                        },
+                        Err(e) => {
+                            log::error!(service=cfg.name.as_str(); "handle failed, {}", e);
+                            break;
                         }
-                        break;
-                    }
+                    };
                 }
-            }
+                MessageReadCode::ConnReadError => todo!(),
+                e => {
+                    #[cfg(debug_assertions)]
+                    {
+                        log::trace!("read request body failed, {:?}", e);
+                    }
+                    break;
+                }
+            },
             MessageReadCode::ConnReadError => {
                 break;
             }

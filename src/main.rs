@@ -14,6 +14,7 @@ use utils::anyhow;
 mod compression;
 mod config;
 mod ctx;
+mod http2;
 pub mod internal;
 mod message;
 mod protocols;

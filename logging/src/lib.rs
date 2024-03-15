@@ -11,7 +11,7 @@ mod rotation_file_appender;
 
 pub use appender::{Appender, Renderer};
 pub use color::{Color, ColorScheme, LevelColors};
-pub use colorful_line_renderer::ColorfulLineRenderer;
+pub use colorful_line_renderer::{ColorfulLineRenderer, ColorfulLineRendererBuilder};
 pub use console_appender::ConsoleAppender;
 pub use dispatcher::init;
 pub use file_appender::FileAppender;

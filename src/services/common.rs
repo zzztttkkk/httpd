@@ -2,7 +2,9 @@ use std::future::Future;
 
 use utils::anyhow;
 
-use crate::{config::service::ServiceConfig, ctx::ConnContext, message::Message};
+use crate::{
+    config::service::ServiceConfig, ctx::ConnContext, message::Message, protocols::Protocol,
+};
 
 pub trait Service {
     fn config(&self) -> &'static ServiceConfig;
@@ -17,5 +19,5 @@ pub trait Service {
         ctx: &ConnContext<R, W>,
         req: &mut Message,
         resp: &mut Message,
-    ) -> impl Future<Output = anyhow::Result<()>> + Send;
+    ) -> impl Future<Output = anyhow::Result<Protocol>> + Send;
 }

@@ -78,3 +78,12 @@ impl Renderer for JsonLineRenderer {
         buf.extend("}}\r\n".as_bytes());
     }
 }
+
+impl JsonLineRenderer {
+    pub fn new(name: &str, timelayout: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            timelayout: timelayout.to_string(),
+        }
+    }
+}

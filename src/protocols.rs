@@ -1,5 +1,5 @@
 pub(crate) enum Protocol {
-    None,
+    Current { keep_alive: bool },
     WebSocket,
     Http2,
 }
