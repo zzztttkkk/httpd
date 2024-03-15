@@ -67,7 +67,9 @@ pub(crate) async fn serve<
                         }
                     };
                 }
-                MessageReadCode::ConnReadError => todo!(),
+                MessageReadCode::ConnReadError => {
+                    break;
+                }
                 e => {
                     #[cfg(debug_assertions)]
                     {
