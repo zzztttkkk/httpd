@@ -4,6 +4,21 @@ use utils::anyhow;
 use super::{bytes_size::BytesSize, duration_in_millis::DurationInMillis};
 
 #[derive(Deserialize, Clone, Default, Debug)]
+pub struct WebsocketConfig {
+    #[serde(default, alias = "MaxFrameBodySize")]
+    pub max_frame_body_size: BytesSize,
+
+    #[serde(default, alias = "MaxMessageBodySize")]
+    pub max_message_body_size: BytesSize,
+
+    #[serde(default, alias = "ReadTimeout")]
+    pub read_timeout: DurationInMillis,
+
+    #[serde(default, alias = "Compression")]
+    pub compression: Option<i32>,
+}
+
+#[derive(Deserialize, Clone, Default, Debug)]
 pub struct HttpConfig {
     #[serde(default, alias = "KeepAlive")]
     pub keep_alive: Option<bool>,
@@ -25,6 +40,9 @@ pub struct HttpConfig {
 
     #[serde(default, alias = "Compression")]
     pub compression: Option<i32>,
+
+    #[serde(default, alias = "Websocket", alias = "ws")]
+    pub websocket: Option<WebsocketConfig>,
 }
 
 impl HttpConfig {

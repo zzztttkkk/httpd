@@ -21,7 +21,6 @@ bytebuffer = "2.2.0"
 glob = { version = "0.3.1" }
 smallvec = { version = "1.13.1" }
 utils = { path = "./utils" }
-uuid = { version = "1.7.0", features = ["v4", "fast-rng"] }
 
 # compression
 flate2 = { version = "1.0.28" }
@@ -38,3 +37,6 @@ rustls-pemfile = { version = "2.1.0" }
 # loggging
 log = { version = "0.4.21", features = ["kv"] }
 logging = { path = "./logging" }
+sha1 = "0.10.6"
+hex-literal = "0.4.1"
+base64 = "0.22.0"

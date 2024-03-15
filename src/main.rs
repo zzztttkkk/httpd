@@ -25,6 +25,7 @@ mod respw;
 mod serve;
 mod services;
 mod ws;
+mod ws_impl;
 
 #[derive(clap::Parser, Debug)]
 #[command(name = "httpd")]
