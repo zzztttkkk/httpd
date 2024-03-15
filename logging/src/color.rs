@@ -33,11 +33,11 @@ impl LevelColors {
 impl Default for LevelColors {
     fn default() -> Self {
         Self {
-            trace: Some(Color(0, 170, 144)),
-            debug: Some(Color(46, 169, 223)),
-            info: Some(Color(165, 222, 228)),
-            warn: Some(Color(233, 139, 42)),
-            error: Some(Color(203, 27, 69)),
+            trace: Some(Color(94, 102, 91)),
+            debug: Some(Color(46, 49, 124)),
+            info: Some(Color(91, 174, 35)),
+            warn: Some(Color(252, 211, 55)),
+            error: Some(Color(237, 90, 101)),
         }
     }
 }
@@ -50,8 +50,6 @@ pub struct ColorScheme {
     pub file: Option<Color>,
     pub line: Option<Color>,
 
-    pub msg: Option<Color>,
-
     pub key: Option<Color>,
     pub value: Option<Color>,
 }
@@ -61,11 +59,10 @@ impl Default for ColorScheme {
         Self {
             levels: Some(Default::default()),
             time: Some(Color(106, 64, 40)),
-            file: Some(Color(97, 97, 56)),
-            line: Some(Color(93, 172, 129)),
-            msg: Some(Default::default()),
-            key: Some(Color(37, 83, 89)),
-            value: Some(Color(15, 37, 64)),
+            file: Some(Color(85, 187, 138)),
+            line: Some(Color(20, 145, 168)),
+            key: Some(Color(216, 89, 22)),
+            value: Some(Color(20, 30, 27)),
         }
     }
 }

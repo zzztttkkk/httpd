@@ -45,12 +45,12 @@ impl Renderer for ColorfulLineRenderer {
             Some(colors) => colors.get(item.level),
             None => None,
         };
-        with_color(buf, item.level.as_str(), &level);
+        with_color(buf, format!("[[{}]]", item.level.as_str()).as_str(), &level);
         buf.push(b' ');
 
         let time_in_txt;
         if self.timelayout.is_empty() {
-            time_in_txt = luxon::fmtlocal(item.time, "%Y-%m-%d %H:%M:%S%.6f %Z");
+            time_in_txt = luxon::fmtlocal(item.time, "%Y-%m-%d %H:%M:%S%.3f%Z");
         } else {
             time_in_txt = luxon::fmtlocal(item.time, &self.timelayout);
         }
@@ -63,7 +63,7 @@ impl Renderer for ColorfulLineRenderer {
         with_color(buf, item.line.to_string().as_str(), &self.scheme.line);
         buf.extend(") ".as_bytes());
 
-        with_color(buf, &item.msg, &self.scheme.msg);
+        with_color(buf, &item.msg, &level);
 
         if item.kvs.is_empty() {
             buf.extend("\r\n".as_bytes());
@@ -114,5 +114,33 @@ impl ColorfulLineRendererBuilder {
 
     pub fn finish(self) -> ColorfulLineRenderer {
         self.ins
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use log::Level;
+
+    use crate::ColorfulLineRenderer;
+
+    #[test]
+    fn test_colors() {
+        crate::init(
+            Level::Trace,
+            vec![Box::new(crate::ConsoleAppender::new(
+                "ColorfulLineRenderer",
+                Box::new(|_| true),
+            ))],
+            vec![Box::new(ColorfulLineRenderer::default())],
+        )
+        .unwrap();
+
+        log::trace!(a= 12, b = "xxx"; "this is a trace msg");
+        log::debug!(a= 12, b = "xxx"; "this is a debug msg");
+        log::info!(a= 12, b = "xxx"; "this is a info msg");
+        log::warn!(a= 12, b = "xxx"; "this is a warn msg");
+        log::error!(a= 12, b = "xxx"; "this is a error msg");
+
+        log::logger().flush();
     }
 }

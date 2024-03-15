@@ -271,7 +271,7 @@ fn main() -> anyhow::Result<()> {
     let config: &'static Config = unsafe { std::mem::transmute(&config) };
 
     logging::init(
-        None,
+        log::Level::Trace,
         vec![Box::new(logging::ConsoleAppender::new(
             "ColorfulLineRenderer",
             Box::new(|_| true),

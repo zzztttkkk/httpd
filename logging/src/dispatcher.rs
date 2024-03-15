@@ -38,7 +38,7 @@ impl log::Log for Dispatcher {
 }
 
 pub fn init(
-    level: Option<log::Level>,
+    level: log::Level,
     appenders: Vec<Box<dyn Appender>>,
     renderers: Vec<Box<dyn Renderer>>,
 ) -> anyhow::Result<()> {
@@ -93,9 +93,6 @@ pub fn init(
         })
     });
 
-    match level {
-        Some(level) => log::set_max_level(level.to_level_filter()),
-        None => log::set_max_level(log::Level::Trace.to_level_filter()),
-    }
+    log::set_max_level(level.to_level_filter());
     anyhow::result(log::set_logger(Box::leak(ptr)))
 }

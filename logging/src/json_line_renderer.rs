@@ -37,7 +37,7 @@ impl Renderer for JsonLineRenderer {
         buf.push(b':');
         let time_in_txt;
         if self.timelayout.is_empty() {
-            time_in_txt = luxon::fmtlocal(item.time, "%Y-%m-%d %H:%M:%S%.6f %Z");
+            time_in_txt = luxon::fmtlocal(item.time, "%Y-%m-%d %H:%M:%S%.3f%z");
         } else {
             time_in_txt = luxon::fmtlocal(item.time, &self.timelayout);
         }
