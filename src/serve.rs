@@ -48,12 +48,10 @@ pub(crate) async fn serve<
                                     continue;
                                 }
                                 Protocol::WebSocket => {
-                                    ws::serve(ctx, reqmsg).await;
-                                    return;
+                                    return ws::serve(ctx, reqmsg).await;
                                 }
                                 Protocol::Http2 => {
-                                    http2::serve(ctx, reqmsg).await;
-                                    return;
+                                    return http2::serve(ctx, reqmsg).await;
                                 }
                             },
                             Err(e) => {
