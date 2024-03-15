@@ -1,32 +1,10 @@
 use utils::luxon;
 
-use crate::{appender::Renderer, item::Item};
-
-#[derive(Default)]
-pub struct Color(pub u8, pub u8, pub u8);
-
-impl Color {
-    pub(crate) fn is_block(&self) -> bool {
-        self.0 == 0 && self.1 == 0 && self.2 == 1
-    }
-}
-
-#[derive(Default)]
-pub struct ColorScheme {
-    pub level: Option<Color>,
-    pub time: Option<Color>,
-
-    pub target: Option<Color>,
-
-    pub module: Option<Color>,
-    pub file: Option<Color>,
-    pub line: Option<Color>,
-
-    pub msg: Option<Color>,
-
-    pub key: Option<Color>,
-    pub value: Option<Color>,
-}
+use crate::{
+    appender::Renderer,
+    color::{Color, ColorScheme},
+    item::Item,
+};
 
 fn with_color(buf: &mut Vec<u8>, txt: &str, color: &Option<Color>) {
     match color.as_ref() {
@@ -35,9 +13,11 @@ fn with_color(buf: &mut Vec<u8>, txt: &str, color: &Option<Color>) {
                 buf.extend(txt.as_bytes());
                 return;
             }
-            buf.extend(format!("\x1b[38;2;{};{};{}m", color.0, color.1, color.2).as_bytes());
+            buf.push(b'\x1b');
+            buf.extend(format!("[38;2;{};{};{}m", color.0, color.1, color.2).as_bytes());
             buf.extend(txt.as_bytes());
-            buf.extend("\x1b[0m".as_bytes());
+            buf.push(b'\x1b');
+            buf.extend("[0m".as_bytes());
         }
         None => {
             buf.extend(txt.as_bytes());
@@ -61,7 +41,11 @@ impl Renderer for ColorfulLineRenderer {
     }
 
     fn render(&self, item: &Item, buf: &mut Vec<u8>) {
-        with_color(buf, &format!("{}", item.level.as_str()), &self.scheme.level);
+        let level = match self.scheme.levels.as_ref() {
+            Some(colors) => colors.get(item.level),
+            None => None,
+        };
+        with_color(buf, item.level.as_str(), &level);
         buf.push(b' ');
 
         let time_in_txt;
@@ -72,6 +56,7 @@ impl Renderer for ColorfulLineRenderer {
         }
         with_color(buf, &time_in_txt.to_string(), &self.scheme.time);
 
+        buf.push(b' ');
         buf.push(b'(');
         with_color(buf, item.file, &self.scheme.file);
         buf.push(b':');

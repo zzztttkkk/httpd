@@ -1,6 +1,10 @@
 use std::sync::Arc;
 
-use crate::{ctx::ConnContext, message::Message, services::common::Service};
+use crate::{
+    ctx::ConnContext,
+    message::{Message, MessageReadCode},
+    services::common::Service,
+};
 
 pub(crate) async fn serve<
     R: tokio::io::AsyncRead + Unpin + Send,
@@ -12,6 +16,11 @@ pub(crate) async fn serve<
     addr: std::net::SocketAddr,
     over_tls: bool,
 ) {
+    #[cfg(debug_assertions)]
+    {
+        log::trace!(service = service.config().name.as_str(); "connection made, {}", addr);
+    }
+
     let cfg = service.config();
     let r = tokio::io::BufReader::with_capacity(cfg.tcp.read_stream_buf_size.0, r);
     let w = tokio::io::BufWriter::with_capacity(cfg.tcp.read_stream_buf_size.0, w);
@@ -22,10 +31,10 @@ pub(crate) async fn serve<
 
     loop {
         match reqmsg.read_headers(&mut ctx).await {
-            crate::message::MessageReadCode::Ok => {
+            MessageReadCode::Ok => {
                 match reqmsg.read_const_length_body(&mut ctx).await {
-                    crate::message::MessageReadCode::Ok => {
-                        match service.handle(&ctx, &mut reqmsg, &mut respmsg).await {
+                    MessageReadCode::Ok => {
+                        match service.http(&ctx, &mut reqmsg, &mut respmsg).await {
                             Ok(_) => {
                                 match (&mut respmsg).write_to(&mut ctx).await {
                                     Ok(_) => {
@@ -47,18 +56,31 @@ pub(crate) async fn serve<
                             }
                         };
                     }
-                    crate::message::MessageReadCode::ConnReadError => todo!(),
+                    MessageReadCode::ConnReadError => todo!(),
                     e => {
+                        #[cfg(debug_assertions)]
+                        {
+                            log::trace!("read request body failed, {:?}", e);
+                        }
                         break;
                     }
                 }
             }
-            crate::message::MessageReadCode::ConnReadError => {
+            MessageReadCode::ConnReadError => {
                 break;
             }
             e => {
+                #[cfg(debug_assertions)]
+                {
+                    log::trace!("read request header failed, {:?}", e);
+                }
                 break;
             }
         }
+    }
+
+    #[cfg(debug_assertions)]
+    {
+        log::trace!(service = service.config().name.as_str(); "connection lost, {}", addr);
     }
 }

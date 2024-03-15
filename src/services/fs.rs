@@ -23,7 +23,7 @@ impl Service for FsService {
         Ok(())
     }
 
-    fn handle<
+    fn http<
         R: tokio::io::AsyncBufReadExt + Unpin + Send,
         W: tokio::io::AsyncWriteExt + Unpin + Send,
     >(

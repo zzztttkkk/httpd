@@ -9,7 +9,7 @@ pub trait Service {
 
     fn init(&mut self) -> impl Future<Output = anyhow::Result<()>> + Send;
 
-    fn handle<
+    fn http<
         R: tokio::io::AsyncBufReadExt + Unpin + Send,
         W: tokio::io::AsyncWriteExt + Unpin + Send,
     >(

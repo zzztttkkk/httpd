@@ -1,4 +1,5 @@
 mod appender;
+mod color;
 mod colorful_line_renderer;
 mod console_appender;
 mod consumer;
@@ -9,7 +10,8 @@ mod json_line_renderer;
 mod rotation_file_appender;
 
 pub use appender::{Appender, Renderer};
-pub use colorful_line_renderer::{ColorScheme, ColorfulLineRenderer};
+pub use color::{Color, ColorScheme, LevelColors};
+pub use colorful_line_renderer::ColorfulLineRenderer;
 pub use console_appender::ConsoleAppender;
 pub use dispatcher::init;
 pub use file_appender::FileAppender;

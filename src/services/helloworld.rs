@@ -31,7 +31,7 @@ impl Service for HelloWorldService {
         Ok(())
     }
 
-    fn handle<
+    fn http<
         R: tokio::io::AsyncBufReadExt + Unpin + Send,
         W: tokio::io::AsyncWriteExt + Unpin + Send,
     >(
@@ -40,6 +40,8 @@ impl Service for HelloWorldService {
         req: &mut Message,
         resp: &mut Message,
     ) -> impl std::future::Future<Output = anyhow::Result<()>> + Send {
+        let reqversion;
+
         {
             log::trace!("Request From {}", ctx.addr);
             let req = RequestReader::from(&*req);
@@ -51,8 +53,10 @@ impl Service for HelloWorldService {
                 true
             });
 
+            reqversion = req.version();
+
             if req.body().is_empty() {
-                log::trace!("RmptyBody");
+                log::trace!("EmptyBody");
             } else {
                 match std::str::from_utf8(req.body().inner()) {
                     Ok(txt) => {
@@ -65,10 +69,18 @@ impl Service for HelloWorldService {
             }
         }
 
-        async {
+        async move {
             let resp = {
                 let mut w = ResponseWriter::from(resp);
                 w.version(1, 1).code(200, "OK").header("server", "httpd.rs");
+
+                match reqversion {
+                    Ok((major, minor)) => {
+                        w.version(major, minor);
+                    }
+                    Err(_) => {}
+                }
+
                 w.end()
             };
             resp.body.write_all_to_internal("Hello world!".as_bytes());

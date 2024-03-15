@@ -164,7 +164,7 @@ async fn run(config: &'static ServiceConfig) -> anyhow::Result<()> {
     if tlscfg.is_some() {
         logo = format!("{}, tls ✅", logo);
     }
-    log::info!("{}", logo);
+    log::info!(service = config.name.as_str() ;"{}", logo);
 
     match &config.service {
         config::service::Service::HelloWorld => {
