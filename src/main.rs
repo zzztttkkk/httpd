@@ -270,7 +270,7 @@ fn main() -> anyhow::Result<()> {
     let config: Config = load_config()?;
     let config: &'static Config = unsafe { std::mem::transmute(&config) };
 
-    logging::init(
+    let _g = logging::init(
         log::Level::Trace,
         vec![Box::new(logging::ConsoleAppender::new(
             "ColorfulLineRenderer",
@@ -288,6 +288,5 @@ fn main() -> anyhow::Result<()> {
     }
 
     log::info!("shutdown");
-    log::logger().flush();
     Ok(())
 }

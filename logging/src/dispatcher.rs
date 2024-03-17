@@ -37,14 +37,41 @@ impl log::Log for Dispatcher {
     }
 }
 
+pub struct ShutdownGuard {
+    ptr: &'static Dispatcher,
+    signal: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl Drop for ShutdownGuard {
+    fn drop(&mut self) {
+        let ptr: *mut Dispatcher = unsafe { std::mem::transmute(self.ptr) };
+        let ptr = unsafe { Box::from_raw(ptr) };
+        std::mem::drop(ptr);
+
+        loop {
+            if self.signal.load(std::sync::atomic::Ordering::SeqCst) {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+    }
+}
+
 pub fn init(
     level: log::Level,
     appenders: Vec<Box<dyn Appender>>,
     renderers: Vec<Box<dyn Renderer>>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<ShutdownGuard> {
     let (sx, rx) = std::sync::mpsc::channel();
     let dispatcher = Dispatcher { sx };
-    let ptr = Box::new(dispatcher);
+    let ptr: &'static Dispatcher = Box::leak(Box::new(dispatcher));
+
+    let guard = ShutdownGuard {
+        signal: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        ptr,
+    };
+
+    let shutdown_signal = guard.signal.clone();
 
     let c = appenders.len();
     let mut consumer = Consumer {
@@ -56,7 +83,7 @@ pub fn init(
 
     std::thread::spawn(move || {
         let runtime = tokio::runtime::Builder::new_current_thread()
-            .max_blocking_threads(1)
+            .max_blocking_threads(consumer.renderers.len())
             .build()
             .unwrap();
 
@@ -90,9 +117,14 @@ pub fn init(
             } else {
                 consume!(rx, render_bufs, consumer, comsume);
             }
-        })
+            shutdown_signal.store(true, std::sync::atomic::Ordering::SeqCst);
+
+            let mut consumer = consumer.lock().await;
+            consumer.flush().await;
+        });
     });
 
     log::set_max_level(level.to_level_filter());
-    anyhow::result(log::set_logger(Box::leak(ptr)))
+    anyhow::result(log::set_logger(ptr))?;
+    Ok(guard)
 }
