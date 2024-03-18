@@ -1,7 +1,7 @@
 use utils::{anyhow, luxon};
 
 use crate::{
-    appender::{Appender, FilterFn},
+    appender::{Appender, Filter},
     file_appender::FileAppender,
 };
 
@@ -61,7 +61,7 @@ impl RotationFileAppender {
         fp: &str,
         bufsize: usize,
         renderer: &str,
-        filter: FilterFn,
+        filter: Box<dyn Filter>,
     ) -> anyhow::Result<Self> {
         let inner = FileAppender::new(fp, bufsize, renderer, filter)?;
         let mut this = Self {
@@ -188,7 +188,7 @@ mod tests {
             "../log/v.log",
             8092,
             "",
-            Box::new(|_| true),
+            crate::appender::filter(|_| true),
         )?;
         Ok(())
     }

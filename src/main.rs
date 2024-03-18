@@ -272,7 +272,7 @@ fn main() -> anyhow::Result<()> {
         log::Level::Trace,
         vec![Box::new(logging::ConsoleAppender::new(
             "ColorfulLineRenderer",
-            Box::new(|_| true),
+            logging::filter(|_| true),
         ))],
         vec![Box::new(logging::ColorfulLineRenderer::default())],
     )?;

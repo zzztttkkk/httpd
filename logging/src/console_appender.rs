@@ -1,10 +1,10 @@
 use tokio::io::AsyncWriteExt;
 
-use crate::{appender::Appender, appender::FilterFn, item::Item};
+use crate::{appender::Appender, appender::Filter, item::Item};
 
 pub struct ConsoleAppender {
     name: String,
-    filter_ptr: FilterFn,
+    filter: Box<dyn Filter>,
     inner: tokio::io::Stdout,
 }
 
@@ -23,15 +23,15 @@ impl Appender for ConsoleAppender {
     }
 
     fn filter(&self, item: &Item) -> bool {
-        (self.filter_ptr)(item)
+        self.filter.filter(item)
     }
 }
 
 impl ConsoleAppender {
-    pub fn new(renderer: &str, filter: FilterFn) -> Self {
+    pub fn new(renderer: &str, filter: Box<dyn Filter>) -> Self {
         Self {
             name: renderer.to_string(),
-            filter_ptr: filter,
+            filter,
             inner: tokio::io::stdout(),
         }
     }

@@ -1,11 +1,11 @@
 use tokio::io::AsyncWriteExt;
 use utils::anyhow;
 
-use crate::{appender::Appender, appender::FilterFn, item::Item};
+use crate::{appender::Appender, appender::Filter, item::Item};
 
 pub struct FileAppender {
     inner: tokio::io::BufWriter<tokio::fs::File>,
-    filter_ptr: FilterFn,
+    filter: Box<dyn Filter>,
     rendername: String,
     bufsize: usize,
 }
@@ -19,7 +19,7 @@ impl Appender for FileAppender {
 
     #[inline]
     fn filter(&self, item: &Item) -> bool {
-        (self.filter_ptr)(item)
+        (self.filter).filter(item)
     }
 
     async fn writeall(&mut self, buf: &[u8]) -> std::io::Result<()> {
@@ -37,7 +37,12 @@ impl FileAppender {
         std::fs::File::options().append(true).create(true).open(fp)
     }
 
-    pub fn new(fp: &str, bufsize: usize, renderer: &str, filter: FilterFn) -> anyhow::Result<Self> {
+    pub fn new(
+        fp: &str,
+        bufsize: usize,
+        renderer: &str,
+        filter: Box<dyn Filter>,
+    ) -> anyhow::Result<Self> {
         let fp = anyhow::result(Self::open(fp))?;
 
         let fp = tokio::fs::File::from_std(fp);
@@ -45,7 +50,7 @@ impl FileAppender {
         Ok(Self {
             inner: tokio::io::BufWriter::with_capacity(bufsize, fp),
             rendername: renderer.to_string(),
-            filter_ptr: filter,
+            filter,
             bufsize,
         })
     }

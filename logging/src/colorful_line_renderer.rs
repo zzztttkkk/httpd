@@ -129,7 +129,7 @@ mod tests {
             Level::Trace,
             vec![Box::new(crate::ConsoleAppender::new(
                 "ColorfulLineRenderer",
-                Box::new(|_| true),
+                crate::appender::filter(|_| true),
             ))],
             vec![Box::new(ColorfulLineRenderer::default())],
         )
