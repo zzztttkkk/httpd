@@ -1,4 +1,4 @@
-use crate::{request::RequestQueryer, respw::ResponseWriter};
+use crate::{reqr::RequestReader, respw::ResponseWriter};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum WsOpCode {
@@ -14,7 +14,7 @@ enum ExtOpCode {
     Close = 0x8,
 }
 
-pub(crate) fn upgrade(req: &mut RequestQueryer, resp: &mut ResponseWriter) -> Result<bool, ()> {
+pub(crate) fn upgrade(req: &mut RequestReader, resp: &mut ResponseWriter) -> Result<bool, ()> {
     static MAGIC_BYTES: &[u8] = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11".as_bytes();
 
     match req.headers().get("sec-websocket-key") {

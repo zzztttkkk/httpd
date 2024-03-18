@@ -1,5 +1,3 @@
-use std::any;
-
 use utils::{anyhow, luxon};
 
 use crate::{
@@ -58,6 +56,44 @@ impl Appender for RotationFileAppender {
 }
 
 impl RotationFileAppender {
+    pub fn new(
+        kind: RotationKind,
+        fp: &str,
+        bufsize: usize,
+        renderer: &str,
+        filter: FilterFn,
+    ) -> anyhow::Result<Self> {
+        let inner = FileAppender::new(fp, bufsize, renderer, filter)?;
+        let mut this = Self {
+            inner,
+            rotate_at: 0,
+            kind,
+            fp: fp.to_string(),
+            name_prefix: "()".to_string(),
+            base_name: "()".to_string(),
+            file_ext: "()".to_string(),
+        };
+        this.next();
+
+        let path = std::path::Path::new(fp);
+        let ext = path
+            .extension()
+            .map_or("".to_string(), |v| v.to_string_lossy().to_string());
+        this.file_ext = ext.clone();
+        let filename = path
+            .file_name()
+            .map_or(None, |v| v.to_str().map_or(None, |v| Some(v.to_string())));
+        let filename = anyhow::option(filename, "empty filename")?;
+        this.name_prefix = (&fp[..fp.len() - filename.len()]).to_string();
+
+        if ext.is_empty() {
+            this.base_name = filename.clone();
+        } else {
+            this.base_name = (&filename.as_str()[..filename.len() - ext.len() - 1]).to_string();
+        }
+        Ok(this)
+    }
+
     #[inline]
     fn calcnext(&self) -> u128 {
         match self.kind {
@@ -73,12 +109,11 @@ impl RotationFileAppender {
 
     async fn rotate(&mut self) -> bool {
         let now = std::time::SystemTime::now();
-        if now
+        let mills = now
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_millis()
-            < self.rotate_at
-        {
+            .as_millis();
+        if mills < self.rotate_at {
             return false;
         }
 
@@ -140,5 +175,21 @@ impl RotationFileAppender {
         }
     }
 }
+#[cfg(test)]
+mod tests {
+    use utils::anyhow;
 
-// TODO testing
+    use crate::RotationFileAppender;
+
+    #[test]
+    fn test_rotation_new() -> anyhow::Result<()> {
+        let appender = RotationFileAppender::new(
+            super::RotationKind::Daily,
+            "../log/v.log",
+            8092,
+            "",
+            Box::new(|_| true),
+        )?;
+        Ok(())
+    }
+}

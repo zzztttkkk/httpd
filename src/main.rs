@@ -19,8 +19,6 @@ pub mod internal;
 mod message;
 mod protocols;
 mod reqr;
-mod request;
-mod response;
 mod respw;
 mod serve;
 mod services;

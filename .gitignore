@@ -5,3 +5,4 @@
 
 /httpd.toml
 *.log
+/log

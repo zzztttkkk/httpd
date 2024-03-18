@@ -21,12 +21,6 @@ pub struct LoggingConfig {
 
     #[serde(default, alias = "DailyRoration", alias = "Daily", alias = "daily")]
     pub daily_roration: bool,
-
-    #[serde(default, alias = "Lossy")]
-    pub lossy: Option<bool>,
-
-    #[serde(default, alias = "BufLines")]
-    pub buf_lines: Option<usize>,
 }
 
 impl LoggingConfig {
@@ -48,14 +42,15 @@ impl LoggingConfig {
         if self.directory.is_empty() && name == "" {
             self.directory = "./log".to_string();
         }
-
-        if self.buf_lines.is_some() && self.buf_lines.unwrap() < 10240 {
-            self.buf_lines = Some(10240);
-        }
         Ok(())
     }
 
-    pub fn init(&self) -> Option<()> {
+    pub fn init(
+        &self,
+    ) -> Option<(
+        Vec<Box<dyn logging::Appender>>,
+        Vec<Box<dyn logging::Renderer>>,
+    )> {
         None
     }
 }

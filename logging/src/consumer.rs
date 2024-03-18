@@ -124,7 +124,7 @@ impl Consumer {
             renderer.render(item, buf);
         }
 
-        let mut fs = vec![];
+        let mut fs: smallvec::SmallVec<[_; 12]> = smallvec::smallvec![];
         for (idx, appender) in appenders.iter_mut().enumerate() {
             let buf = unsafe { render_bufs.get_unchecked(*(armap.get_unchecked(idx))) };
             fs.push(appender.writeall(&buf));
@@ -141,7 +141,7 @@ impl Consumer {
     }
 
     pub(crate) async fn flush(&mut self) {
-        let mut fs = vec![];
+        let mut fs: smallvec::SmallVec<[_; 12]> = smallvec::smallvec![];
         for appender in self.appenders.iter_mut() {
             fs.push(appender.flush());
         }
