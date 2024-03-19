@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use utils::anyhow;
 
 use crate::{
-    appender::{self, Appender, Renderer},
+    appender::{Appender, Renderer},
     item::Item,
 };
 
@@ -23,6 +23,18 @@ fn unique(names: impl Iterator<Item = String>) -> bool {
         c += 1;
     }
     ns.len() == c
+}
+
+struct AppenderPtr(usize);
+
+impl AppenderPtr {
+    fn from(ptr: &Box<dyn Appender>) -> Self {
+        Self(unsafe { std::mem::transmute(ptr) })
+    }
+
+    fn to(&self) -> &'static mut Box<dyn Appender> {
+        unsafe { std::mem::transmute(self.0) }
+    }
 }
 
 impl Consumer {
@@ -73,12 +85,7 @@ impl Consumer {
         Ok(())
     }
 
-    pub(crate) async fn consume_when_single_renderer(
-        &mut self,
-        item: &Item,
-        render_bufs: &mut Vec<Vec<u8>>,
-    ) {
-        let mut appender_idxes: smallvec::SmallVec<[usize; 12]> = smallvec::smallvec![];
+    fn filter_when_single_renderer(&self, item: &Item, dest: &mut smallvec::SmallVec<[usize; 12]>) {
         match self.servicemap.get(item.service.as_str()) {
             None => {
                 return;
@@ -87,12 +94,20 @@ impl Consumer {
                 for idx in idxes {
                     let appender = unsafe { self.appenders.get_unchecked(*idx) };
                     if appender.filter(item) {
-                        appender_idxes.push(*idx);
+                        dest.push(*idx);
                     }
                 }
             }
         }
+    }
 
+    pub(crate) async fn consume_when_single_renderer(
+        &mut self,
+        item: &Item,
+        render_bufs: &mut Vec<Vec<u8>>,
+    ) {
+        let mut appender_idxes: smallvec::SmallVec<[usize; 12]> = smallvec::smallvec![];
+        self.filter_when_single_renderer(item, &mut appender_idxes);
         if appender_idxes.len() < 1 {
             return;
         }
@@ -104,16 +119,9 @@ impl Consumer {
 
         let mut futs = vec![];
         for idx in appender_idxes {
-            let appender = unsafe { self.appenders.get_unchecked_mut(idx) };
-            let fut = appender.writeall(&buf);
-            futs.push(fut);
+            let ptr = AppenderPtr::from(unsafe { self.appenders.get_unchecked(idx) });
+            futs.push(ptr.to().writeall(&buf));
         }
-        // for (idx, appender) in self.appenders.iter_mut().enumerate() {
-        //     if !appender_idxes.contains(&idx) {
-        //         continue;
-        //     }
-        //     futs.push(appender.writeall(&buf));
-        // }
 
         for f in futs {
             match f.await {
@@ -125,43 +133,68 @@ impl Consumer {
         }
     }
 
-    pub(crate) async fn comsume(&mut self, item: &Item, render_bufs: &mut Vec<Vec<u8>>) {
-        let mut ridxes: smallvec::SmallVec<[usize; 12]> = smallvec::smallvec![];
-        let mut armap: smallvec::SmallVec<[usize; 12]> = smallvec::smallvec![];
-        let mut appenders: smallvec::SmallVec<[&mut Box<dyn Appender>; 12]> = smallvec::smallvec![];
-
-        for (aidx, appender) in self.appenders.iter_mut().enumerate() {
-            if !appender.filter(item) {
-                continue;
+    fn filter(
+        &self,
+        item: &Item,
+        dest: &mut smallvec::SmallVec<[usize; 12]>,
+        renderer_idxes: &mut smallvec::SmallVec<[usize; 12]>,
+        appender_renderer_map: &mut smallvec::SmallVec<[usize; 12]>,
+    ) {
+        match self.servicemap.get(item.service.as_str()) {
+            None => {
+                return;
             }
-            appenders.push(appender);
-            let ridx = *unsafe { self.armap.get_unchecked(aidx) };
-            armap.push(ridx);
+            Some(idxes) => {
+                for idx in idxes {
+                    let idx = *idx;
+                    let appender = unsafe { self.appenders.get_unchecked(idx) };
+                    if !appender.filter(item) {
+                        continue;
+                    }
 
-            if ridxes.contains(&ridx) {
-                continue;
+                    dest.push(idx);
+                    let ridx = *unsafe { self.armap.get_unchecked(idx) };
+                    appender_renderer_map.push(ridx);
+                    if renderer_idxes.contains(&ridx) {
+                        continue;
+                    }
+                    renderer_idxes.push(ridx);
+                }
             }
-            ridxes.push(ridx);
         }
+    }
 
-        if appenders.is_empty() {
+    pub(crate) async fn comsume(&mut self, item: &Item, render_bufs: &mut Vec<Vec<u8>>) {
+        let mut using_renderer_idxes: smallvec::SmallVec<[usize; 12]> = smallvec::smallvec![];
+        let mut appender_renderer_idx_map: smallvec::SmallVec<[usize; 12]> = smallvec::smallvec![];
+        let mut appender_idxes: smallvec::SmallVec<[usize; 12]> = smallvec::smallvec![];
+        self.filter(
+            item,
+            &mut appender_idxes,
+            &mut using_renderer_idxes,
+            &mut appender_renderer_idx_map,
+        );
+        if appender_idxes.is_empty() {
             return;
         }
 
-        for ridx in ridxes {
+        for ridx in using_renderer_idxes {
             let buf = unsafe { render_bufs.get_unchecked_mut(ridx) };
             let renderer = unsafe { self.renderers.get_unchecked(ridx) };
             buf.clear();
             renderer.render(item, buf);
         }
 
-        let mut fs: smallvec::SmallVec<[_; 12]> = smallvec::smallvec![];
-        for (idx, appender) in appenders.iter_mut().enumerate() {
-            let buf = unsafe { render_bufs.get_unchecked(*(armap.get_unchecked(idx))) };
-            fs.push(appender.writeall(&buf));
+        let mut futs: smallvec::SmallVec<[_; 12]> = smallvec::smallvec![];
+        for idx in appender_idxes {
+            let buf = unsafe {
+                render_bufs.get_unchecked(*(appender_renderer_idx_map.get_unchecked(idx)))
+            };
+            let ptr = AppenderPtr::from(unsafe { self.appenders.get_unchecked(idx) });
+            futs.push(ptr.to().writeall(&buf));
         }
 
-        for f in fs {
+        for f in futs {
             match f.await {
                 Err(e) => {
                     eprintln!("logging: write failed, {}", e);
@@ -199,12 +232,21 @@ mod tests {
         let mut nums = vec![X { num: 1 }, X { num: 2 }, X { num: 3 }];
 
         let mut tmp = vec![];
-        for idx in vec![0, 2] {
-            tmp.push(unsafe { nums.get_unchecked_mut(idx) });
+        // for idx in vec![0, 2] {
+        //     tmp.push(unsafe { nums.get_unchecked_mut(idx) });
+        // }
+
+        for (idx, num) in nums.iter_mut().enumerate() {
+            if !(vec![0, 2].contains(&idx)) {
+                continue;
+            }
+            tmp.push(num);
         }
 
         for v in tmp {
             v.num += 12;
         }
+
+        println!("=================");
     }
 }

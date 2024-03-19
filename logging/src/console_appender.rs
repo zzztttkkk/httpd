@@ -28,7 +28,7 @@ impl Appender for ConsoleAppender {
     }
 
     fn service(&self) -> &str {
-        self.service()
+        &self.service_name
     }
 }
 
