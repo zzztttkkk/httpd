@@ -30,6 +30,10 @@ impl Appender for RotationFileAppender {
         self.inner.renderer()
     }
 
+    fn service(&self) -> &str {
+        self.inner.service()
+    }
+
     #[inline]
     fn filter(&self, item: &crate::item::Item) -> bool {
         self.inner.filter(item)
@@ -56,14 +60,25 @@ impl Appender for RotationFileAppender {
 }
 
 impl RotationFileAppender {
-    pub fn new(
-        kind: RotationKind,
+    pub fn daily(
+        service: &str,
         fp: &str,
         bufsize: usize,
         renderer: &str,
         filter: Box<dyn Filter>,
     ) -> anyhow::Result<Self> {
-        let inner = FileAppender::new(fp, bufsize, renderer, filter)?;
+        Self::new(RotationKind::Daily, service, fp, bufsize, renderer, filter)
+    }
+
+    pub fn new(
+        kind: RotationKind,
+        service: &str,
+        fp: &str,
+        bufsize: usize,
+        renderer: &str,
+        filter: Box<dyn Filter>,
+    ) -> anyhow::Result<Self> {
+        let inner = FileAppender::new(service, fp, bufsize, renderer, filter)?;
         let mut this = Self {
             inner,
             rotate_at: 0,
@@ -185,6 +200,7 @@ mod tests {
     fn test_rotation_new() -> anyhow::Result<()> {
         let appender = RotationFileAppender::new(
             super::RotationKind::Daily,
+            "",
             "../log/v.log",
             8092,
             "",

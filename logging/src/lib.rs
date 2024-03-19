@@ -17,4 +17,4 @@ pub use dispatcher::init;
 pub use file_appender::FileAppender;
 pub use item::Item;
 pub use json_line_renderer::JsonLineRenderer;
-pub use rotation_file_appender::RotationFileAppender;
+pub use rotation_file_appender::{RotationFileAppender, RotationKind};

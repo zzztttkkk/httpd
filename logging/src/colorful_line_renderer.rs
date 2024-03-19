@@ -128,6 +128,7 @@ mod tests {
         let _g = crate::init(
             Level::Trace,
             vec![Box::new(crate::ConsoleAppender::new(
+                "",
                 "ColorfulLineRenderer",
                 crate::appender::filter(|_| true),
             ))],

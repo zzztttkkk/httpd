@@ -6,7 +6,8 @@ use crate::{appender::Appender, appender::Filter, item::Item};
 pub struct FileAppender {
     inner: tokio::io::BufWriter<tokio::fs::File>,
     filter: Box<dyn Filter>,
-    rendername: String,
+    render_name: String,
+    service_name: String,
     bufsize: usize,
 }
 
@@ -14,7 +15,11 @@ pub struct FileAppender {
 impl Appender for FileAppender {
     #[inline]
     fn renderer(&self) -> &str {
-        &self.rendername
+        &self.render_name
+    }
+
+    fn service(&self) -> &str {
+        &self.service_name
     }
 
     #[inline]
@@ -38,6 +43,7 @@ impl FileAppender {
     }
 
     pub fn new(
+        service: &str,
         fp: &str,
         bufsize: usize,
         renderer: &str,
@@ -48,8 +54,9 @@ impl FileAppender {
         let fp = tokio::fs::File::from_std(fp);
 
         Ok(Self {
+            service_name: service.to_string(),
             inner: tokio::io::BufWriter::with_capacity(bufsize, fp),
-            rendername: renderer.to_string(),
+            render_name: renderer.to_string(),
             filter,
             bufsize,
         })

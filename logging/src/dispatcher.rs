@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use utils::anyhow;
 
 use crate::{appender::Appender, appender::Renderer, consumer::Consumer, item::Item};
@@ -77,7 +79,8 @@ pub fn init(
     let mut consumer = Consumer {
         appenders,
         renderers,
-        map: Vec::with_capacity(c),
+        armap: Vec::with_capacity(c),
+        servicemap: HashMap::new(),
     };
     consumer.init()?;
 

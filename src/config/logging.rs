@@ -1,8 +1,10 @@
-use std::str::FromStr;
+use std::{collections::HashSet, str::FromStr};
 
 use serde::Deserialize;
 
 use utils::anyhow;
+
+use super::bytes_size::BytesSize;
 
 #[derive(Deserialize, Clone, Default, Debug)]
 pub struct LoggingConfig {
@@ -26,6 +28,12 @@ pub struct LoggingConfig {
 
     #[serde(default, alias = "DailyRoration", alias = "Daily", alias = "daily")]
     pub daily_roration: bool,
+
+    #[serde(default, alias = "BufferSize")]
+    pub buffer_size: BytesSize,
+
+    #[serde(default, alias = "RendererName")]
+    pub renderer_name: String,
 }
 
 #[derive(Clone, Default)]
@@ -71,6 +79,9 @@ impl LoggingConfig {
                 if self.directory.is_empty() {
                     self.directory = root.directory.clone();
                 }
+                if self.buffer_size.0 < 8092 {
+                    self.buffer_size = root.buffer_size.clone();
+                }
             }
             None => {}
         }
@@ -78,13 +89,30 @@ impl LoggingConfig {
         if self.directory.is_empty() && name == "" {
             self.directory = "./log".to_string();
         }
+
+        if self.buffer_size.0 < 8092 {
+            self.buffer_size = BytesSize(8092);
+        }
         Ok(())
     }
 
-    pub fn init(&self) -> Option<Vec<Box<dyn logging::Appender>>> {
-        if self.disable.is_some() && self.disable.unwrap() {
-            return None;
+    fn get_renderer_name(&self, names: &mut HashSet<String>, d: &'static str) -> &str {
+        if self.renderer_name.is_empty() {
+            names.insert(d.to_ascii_lowercase());
+            return d;
         }
+        names.insert(self.renderer_name.to_lowercase());
+        return self.renderer_name.as_str();
+    }
+
+    pub fn init(
+        &self,
+    ) -> anyhow::Result<Option<(Vec<Box<dyn logging::Appender>>, HashSet<String>)>> {
+        if self.disable.is_some() && self.disable.unwrap() {
+            return Ok(None);
+        }
+
+        let mut renderer_names = HashSet::new();
 
         let mut filter = FilterConifg::default();
         filter.service_name = self.service_name.clone();
@@ -101,11 +129,10 @@ impl LoggingConfig {
 
         let mut appenders: Vec<Box<dyn logging::Appender>> = vec![];
 
-        if self.each_level.is_some() && self.each_level.unwrap() {}
-
         if self.debug.is_some() && self.debug.unwrap() {
             appenders.push(Box::new(logging::ConsoleAppender::new(
-                "",
+                self.service_name.as_str(),
+                self.get_renderer_name(&mut renderer_names, "colored"),
                 Box::new(filter.clone()),
             )));
         }
@@ -115,6 +142,54 @@ impl LoggingConfig {
             filename = "httpd.log".to_string();
         }
 
-        Some(appenders)
+        macro_rules! make_appenders {
+            ($self:ident, $renderer_name:ident, $filter:ident, $appenders:ident, $cls:ident, $method:ident) => {
+                if $self.each_level.is_some() && $self.each_level.unwrap() {
+                    for v in vec![
+                        log::Level::Trace,
+                        log::Level::Debug,
+                        log::Level::Info,
+                        log::Level::Warn,
+                        log::Level::Error,
+                    ] {
+                        let mut filter = $filter.clone();
+                        filter.level = Some(v);
+                        filter.level_equal = Some(true);
+                        let appender = logging::$cls::$method(
+                            $self.service_name.as_str(),
+                            &filename,
+                            $self.buffer_size.0,
+                            $self.get_renderer_name(&mut $renderer_name, "json"),
+                            Box::new(filter),
+                        )?;
+                        $appenders.push(Box::new(appender));
+                    }
+                } else {
+                    let filter = filter.clone();
+                    let appender = logging::$cls::$method(
+                        $self.service_name.as_str(),
+                        &filename,
+                        self.buffer_size.0,
+                        self.get_renderer_name(&mut $renderer_name, "json"),
+                        Box::new(filter),
+                    )?;
+                    appenders.push(Box::new(appender));
+                }
+            };
+        }
+
+        if self.daily_roration {
+            make_appenders!(
+                self,
+                renderer_names,
+                filter,
+                appenders,
+                RotationFileAppender,
+                daily
+            );
+        } else {
+            make_appenders!(self, renderer_names, filter, appenders, FileAppender, new);
+        }
+        Ok(Some((appenders, renderer_names)))
     }
 }

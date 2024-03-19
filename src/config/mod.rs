@@ -153,6 +153,8 @@ impl Config {
 
         Ok(())
     }
+
+    pub fn init(&self) {}
 }
 
 #[cfg(test)]

@@ -271,6 +271,7 @@ fn main() -> anyhow::Result<()> {
     let _g = logging::init(
         log::Level::Trace,
         vec![Box::new(logging::ConsoleAppender::new(
+            "",
             "ColorfulLineRenderer",
             logging::filter(|_| true),
         ))],
