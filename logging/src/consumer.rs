@@ -25,6 +25,7 @@ fn unique(names: impl Iterator<Item = String>) -> bool {
     ns.len() == c
 }
 
+// TODO explain this raw ptr
 struct AppenderPtr(usize);
 
 impl AppenderPtr {
