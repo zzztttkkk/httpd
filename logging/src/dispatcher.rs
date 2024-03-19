@@ -86,7 +86,7 @@ pub fn init(
 
     std::thread::spawn(move || {
         let runtime = tokio::runtime::Builder::new_current_thread()
-            .max_blocking_threads(consumer.renderers.len())
+            .max_blocking_threads(consumer.appenders.len())
             .build()
             .unwrap();
 
