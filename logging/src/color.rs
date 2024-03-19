@@ -46,12 +46,9 @@ impl Default for LevelColors {
 pub struct ColorScheme {
     pub levels: Option<LevelColors>,
     pub time: Option<Color>,
-
     pub file: Option<Color>,
     pub line: Option<Color>,
-
     pub key: Option<Color>,
-    pub value: Option<Color>,
 }
 
 impl Default for ColorScheme {
@@ -62,7 +59,6 @@ impl Default for ColorScheme {
             file: Some(Color(85, 187, 138)),
             line: Some(Color(20, 145, 168)),
             key: Some(Color(216, 89, 22)),
-            value: Some(Color(20, 30, 27)),
         }
     }
 }

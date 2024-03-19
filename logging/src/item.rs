@@ -10,19 +10,80 @@ pub struct Item {
     pub service: String,
 }
 
-impl<'kvs> log::kv::VisitSource<'kvs> for Item {
+struct KeyBuf(smallvec::SmallVec<[u8; 32]>);
+struct ValBuf(smallvec::SmallVec<[u8; 128]>);
+
+macro_rules! impl_write {
+    ($cls:ident) => {
+        impl $cls {
+            pub fn new() -> Self {
+                Self(Default::default())
+            }
+
+            fn str(&self) -> &str {
+                unsafe { std::str::from_utf8_unchecked(self.0.as_slice()) }
+            }
+
+            fn unqoute(&self) -> &str {
+                let v = unsafe { std::str::from_utf8_unchecked(self.0.as_slice()) };
+                if v.starts_with('"') && v.starts_with('"') {
+                    return &(v[1..v.len() - 1]);
+                }
+                return v;
+            }
+        }
+
+        impl std::io::Write for $cls {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                self.0.extend_from_slice(buf);
+                Ok(buf.len())
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+    };
+}
+
+impl_write!(KeyBuf);
+impl_write!(ValBuf);
+
+struct KvsVisitor<'a> {
+    kvs: &'a mut Kvs,
+    keytemp: KeyBuf,
+    valtemp: ValBuf,
+    service: KeyBuf,
+}
+
+impl<'kvs, 'a> log::kv::VisitSource<'kvs> for KvsVisitor<'a> {
     fn visit_pair(
         &mut self,
         key: log::kv::Key<'kvs>,
         value: log::kv::Value<'kvs>,
     ) -> Result<(), log::kv::Error> {
-        let key = serde_json::to_string(&key).map_or(String::default(), |v| v);
-        let val = serde_json::to_string(&value).map_or(String::default(), |v| v);
-        if key.eq("service") {
-            self.service = val;
+        self.keytemp.0.clear();
+        self.valtemp.0.clear();
+
+        _ = serde_json::to_writer(&mut self.keytemp, &key);
+        if self.keytemp.0.is_empty() {
             return Ok(());
         }
-        self.kvs.push((key, val));
+
+        _ = serde_json::to_writer(&mut self.valtemp, &value);
+
+        if self.keytemp.str().eq("\"service\"") {
+            self.service.0.clear();
+            self.service
+                .0
+                .extend_from_slice(self.valtemp.unqoute().as_bytes());
+            return Ok(());
+        }
+
+        self.kvs.push((
+            self.keytemp.str().to_string(),
+            self.valtemp.str().to_string(),
+        ));
         Ok(())
     }
 }
@@ -38,7 +99,14 @@ impl std::convert::From<&log::Record<'_>> for Item {
             kvs: smallvec::smallvec![],
             service: String::new(),
         };
-        _ = value.key_values().visit(&mut item);
+        let mut vi = KvsVisitor {
+            kvs: &mut item.kvs,
+            keytemp: KeyBuf::new(),
+            valtemp: ValBuf::new(),
+            service: KeyBuf::new(),
+        };
+        _ = value.key_values().visit(&mut vi);
+        item.service = vi.service.str().to_string();
         item
     }
 }

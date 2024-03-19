@@ -76,7 +76,7 @@ impl Renderer for ColorfulLineRenderer {
         for (idx, pair) in item.kvs.iter().enumerate() {
             with_color(buf, pair.0.as_str(), &self.scheme.key);
             buf.extend(": ".as_bytes());
-            with_color(buf, pair.1.as_str(), &self.scheme.value);
+            with_color(buf, pair.1.as_str(), &level);
             if idx != last {
                 buf.extend(" , ".as_bytes());
             }
@@ -136,10 +136,10 @@ mod tests {
         )
         .unwrap();
 
-        log::trace!(a= 12, b = "xxx"; "this is a trace msg");
-        log::debug!(a= 12, b = "xxx"; "this is a debug msg");
-        log::info!(a= 12, b = "xxx"; "this is a info msg");
-        log::warn!(a= 12, b = "xxx"; "this is a warn msg");
-        log::error!(a= 12, b = "xxx"; "this is a error msg");
+        log::trace!(a= 12, b = "xxx5"; "this is a trace msg, hello {} !", "world");
+        log::debug!(a= 13, b = "xxx4"; "this is a debug msg");
+        log::info!(a= 14, b = "xxx3"; "this is a info msg");
+        log::warn!(a= 15, b = "xxx2"; "this is a warn msg");
+        log::error!(a= 16, b = "xxx1"; "this is a error msg");
     }
 }
