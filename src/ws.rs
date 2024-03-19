@@ -4,7 +4,7 @@ pub(crate) async fn serve<
     R: tokio::io::AsyncBufReadExt + Unpin,
     W: tokio::io::AsyncWriteExt + Unpin,
 >(
-    ctx: ConnContext<R, W>,
-    req: Message,
+    _ctx: ConnContext<R, W>,
+    _req: Message,
 ) {
 }

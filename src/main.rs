@@ -3,8 +3,7 @@ use std::sync::Arc;
 use crate::{
     config::Config,
     services::{
-        common::Service, forward::ForwardService, fs::FsService, helloworld::HelloWorldService,
-        upstream::UpstreamService,
+        common::Service, fs::FsService, helloworld::HelloWorldService,
     },
 };
 use clap::Parser;

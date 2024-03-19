@@ -198,7 +198,7 @@ mod tests {
 
     #[test]
     fn test_rotation_new() -> anyhow::Result<()> {
-        let appender = RotationFileAppender::new(
+        let _ = RotationFileAppender::new(
             super::RotationKind::Daily,
             "",
             "../log/v.log",

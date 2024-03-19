@@ -28,9 +28,9 @@ impl Service for FsService {
         W: tokio::io::AsyncWriteExt + Unpin + Send,
     >(
         &self,
-        ctx: &crate::ctx::ConnContext<R, W>,
-        req: &mut Message,
-        resp: &mut Message,
+        _ctx: &crate::ctx::ConnContext<R, W>,
+        _req: &mut Message,
+        _resp: &mut Message,
     ) -> impl std::future::Future<Output = anyhow::Result<Protocol>> + Send {
         async { Ok(Protocol::Current { keep_alive: true }) }
     }

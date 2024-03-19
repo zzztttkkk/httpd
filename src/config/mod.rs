@@ -58,7 +58,7 @@ impl Config {
                         continue;
                     }
 
-                    let path = entry.as_path().to_string_lossy().to_string();
+                    let _path = entry.as_path().to_string_lossy().to_string();
                     let basename = entry
                         .as_path()
                         .file_name()

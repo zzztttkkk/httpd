@@ -11,9 +11,9 @@ impl ForwardService {
 
     pub async fn serve<R: tokio::io::AsyncRead + Unpin, W: tokio::io::AsyncWrite + Unpin>(
         &self,
-        r: R,
-        w: W,
-        addr: SocketAddr,
+        _r: R,
+        _w: W,
+        _addr: SocketAddr,
     ) {
     }
 }

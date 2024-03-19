@@ -62,10 +62,10 @@ impl Service {
                 }
                 Ok(())
             }
-            Service::Forward { target_addr, rules } => Ok(()),
+            Service::Forward { target_addr: _, rules: _ } => Ok(()),
             Service::Upstream {
-                target_addrs,
-                rules,
+                target_addrs: _,
+                rules: _,
             } => Ok(()),
             _ => Ok(()),
         }
