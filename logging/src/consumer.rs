@@ -26,15 +26,15 @@ fn unique(names: impl Iterator<Item = String>) -> bool {
 }
 
 // TODO explain this raw ptr
-struct AppenderPtr(usize);
+struct AppenderPtr(*mut Box<dyn Appender>);
 
 impl AppenderPtr {
-    fn from(ptr: &Box<dyn Appender>) -> Self {
-        Self(unsafe { std::mem::transmute(ptr) })
+    fn from(ptr: &mut Box<dyn Appender>) -> Self {
+        Self(ptr)
     }
 
     fn to(&self) -> &'static mut Box<dyn Appender> {
-        unsafe { std::mem::transmute(self.0) }
+        unsafe { &mut *(self.0) }
     }
 }
 
@@ -120,7 +120,7 @@ impl Consumer {
 
         let mut futs = vec![];
         for idx in appender_idxes {
-            let ptr = AppenderPtr::from(unsafe { self.appenders.get_unchecked(idx) });
+            let ptr = AppenderPtr::from(unsafe { self.appenders.get_unchecked_mut(idx) });
             futs.push(ptr.to().writeall(&buf));
         }
 
@@ -191,7 +191,7 @@ impl Consumer {
             let buf = unsafe {
                 render_bufs.get_unchecked(*(appender_renderer_idx_map.get_unchecked(idx)))
             };
-            let ptr = AppenderPtr::from(unsafe { self.appenders.get_unchecked(idx) });
+            let ptr = AppenderPtr::from(unsafe { self.appenders.get_unchecked_mut(idx) });
             futs.push(ptr.to().writeall(&buf));
         }
 
@@ -219,35 +219,5 @@ impl Consumer {
                 _ => {}
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    struct X {
-        num: i32,
-    }
-
-    #[test]
-    fn test_iter() {
-        let mut nums = vec![X { num: 1 }, X { num: 2 }, X { num: 3 }];
-
-        let mut tmp = vec![];
-        // for idx in vec![0, 2] {
-        //     tmp.push(unsafe { nums.get_unchecked_mut(idx) });
-        // }
-
-        for (idx, num) in nums.iter_mut().enumerate() {
-            if !(vec![0, 2].contains(&idx)) {
-                continue;
-            }
-            tmp.push(num);
-        }
-
-        for v in tmp {
-            v.num += 12;
-        }
-
-        println!("=================");
     }
 }
