@@ -1,4 +1,4 @@
-use std::{collections::HashSet, str::FromStr};
+use std::{collections::HashSet, process::id, str::FromStr};
 
 use serde::Deserialize;
 
@@ -6,7 +6,39 @@ use utils::anyhow;
 
 use super::bytes_size::BytesSize;
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Deserialize, Clone, Debug)]
+pub enum Appender {
+    #[serde(alias = "console")]
+    Console {
+        #[serde(default, alias = "Level")]
+        level: Option<String>,
+    },
+
+    #[serde(alias = "file")]
+    File {
+        #[serde(default, alias = "Level")]
+        level: Option<String>,
+
+        #[serde(default, alias = "Equal")]
+        equal: Option<bool>,
+
+        #[serde(default, alias = "Daily")]
+        daily: bool,
+
+        #[serde(default, alias = "BufferSize")]
+        bufsize: BytesSize,
+    },
+}
+
+impl Default for Appender {
+    fn default() -> Self {
+        Self::Console {
+            level: Some("trace".to_string()),
+        }
+    }
+}
+
+#[derive(Deserialize, Clone, Debug)]
 pub struct LoggingConfig {
     #[serde(skip)]
     service_name: String,
@@ -17,48 +49,37 @@ pub struct LoggingConfig {
     #[serde(default, alias = "Disable")]
     pub disable: Option<bool>,
 
-    #[serde(default, alias = "Debug")]
-    pub debug: Option<bool>,
+    #[serde(default, alias = "TimeLayout", alias = "time_layout")]
+    pub timelayout: String,
 
-    #[serde(default, alias = "Level")]
-    pub level: Option<String>,
-
-    #[serde(default, alias = "EachLevel")]
-    pub each_level: Option<bool>,
-
-    #[serde(default, alias = "Directory")]
-    pub directory: String,
-
-    #[serde(default, alias = "DailyRoration", alias = "Daily", alias = "daily")]
-    pub daily_roration: bool,
-
-    #[serde(default, alias = "BufferSize")]
-    pub buffer_size: BytesSize,
-
-    #[serde(default, alias = "RendererName")]
-    pub renderer_name: String,
-
-    #[serde(default, alias = "TimeLayout")]
-    pub time_layout: String,
+    #[serde(default, alias = "Appender")]
+    pub appenders: Vec<Appender>,
 }
 
-#[derive(Clone, Default)]
+impl Default for LoggingConfig {
+    fn default() -> Self {
+        Self {
+            service_name: Default::default(),
+            service_idx: Default::default(),
+            disable: Default::default(),
+            timelayout: Default::default(),
+            appenders: vec![Default::default()],
+        }
+    }
+}
+
+#[derive(Clone)]
 struct FilterConifg {
-    level: Option<log::Level>,
-    level_equal: Option<bool>,
+    level: log::Level,
+    level_equal: bool,
 }
 
 impl logging::Filter for FilterConifg {
     fn filter(&self, item: &logging::Item) -> bool {
-        match self.level {
-            Some(level) => {
-                if self.level_equal.is_some() && self.level_equal.unwrap() {
-                    item.level == level
-                } else {
-                    item.level >= level
-                }
-            }
-            None => true,
+        if self.level_equal {
+            item.level == self.level
+        } else {
+            item.level >= self.level
         }
     }
 }
@@ -66,124 +87,87 @@ impl logging::Filter for FilterConifg {
 impl LoggingConfig {
     pub(crate) fn autofix(&mut self, name: &str, root: Option<&Self>) -> anyhow::Result<()> {
         self.service_name = name.to_string();
-        match root {
-            Some(root) => {
-                if root.disable.is_some() && root.disable.unwrap() {
-                    self.disable = Some(true);
-                }
-                if self.directory.is_empty() {
-                    self.directory = root.directory.clone();
-                }
-                if self.buffer_size.0 < 8092 {
-                    self.buffer_size = root.buffer_size.clone();
-                }
-            }
-            None => {}
-        }
-
-        if self.directory.is_empty() && name == "" {
-            self.directory = "./log".to_string();
-        }
-
-        if self.buffer_size.0 < 8092 {
-            self.buffer_size = BytesSize(8092);
-        }
         Ok(())
     }
 
-    fn get_renderer_name(&self, names: &mut HashSet<String>, d: &'static str) -> &str {
-        if self.renderer_name.is_empty() {
-            names.insert(d.to_ascii_lowercase());
-            return d;
-        }
-        names.insert(self.renderer_name.to_lowercase());
-        return self.renderer_name.as_str();
-    }
-
-    pub fn init(
-        &self,
-    ) -> anyhow::Result<Option<(Vec<Box<dyn logging::Appender>>, HashSet<String>)>> {
+    pub fn init(&self, logpath: &str) -> anyhow::Result<Option<Vec<Box<dyn logging::Appender>>>> {
         if self.disable.is_some() && self.disable.unwrap() {
             return Ok(None);
         }
 
-        let mut renderer_names = HashSet::new();
-
-        let mut filter = FilterConifg::default();
-
-        match self.level.as_ref() {
-            Some(level) => match log::Level::from_str(&level) {
-                Ok(level) => {
-                    filter.level = Some(level);
-                }
-                Err(_) => {}
-            },
-            None => {}
-        }
-
         let mut appenders: Vec<Box<dyn logging::Appender>> = vec![];
+        let mut fps: HashSet<String> = HashSet::default();
 
-        if self.debug.is_some() && self.debug.unwrap() {
-            appenders.push(Box::new(logging::ConsoleAppender::new(
-                self.service_idx,
-                self.get_renderer_name(&mut renderer_names, "colored"),
-                Box::new(filter.clone()),
-            )));
-        }
+        for (idx, cfg) in self.appenders.iter().enumerate() {
+            match cfg {
+                Appender::Console { level } => {
+                    let level =
+                        log::Level::from_str(&(level.clone()).unwrap_or("trace".to_string()))
+                            .unwrap_or(log::Level::Trace);
 
-        let mut filename = format!("{}.log", self.service_name.as_str());
-        if self.service_name.is_empty() {
-            filename = "httpd.log".to_string();
-        }
-
-        macro_rules! make_appenders {
-            ($self:ident, $renderer_name:ident, $filter:ident, $appenders:ident, $cls:ident, $method:ident) => {
-                if $self.each_level.is_some() && $self.each_level.unwrap() {
-                    for v in vec![
-                        log::Level::Trace,
-                        log::Level::Debug,
-                        log::Level::Info,
-                        log::Level::Warn,
-                        log::Level::Error,
-                    ] {
-                        let mut filter = $filter.clone();
-                        filter.level = Some(v);
-                        filter.level_equal = Some(true);
-                        let appender = logging::$cls::$method(
-                            $self.service_idx,
-                            &filename,
-                            $self.buffer_size.0,
-                            $self.get_renderer_name(&mut $renderer_name, "json"),
-                            Box::new(filter),
-                        )?;
-                        $appenders.push(Box::new(appender));
-                    }
-                } else {
-                    let filter = filter.clone();
-                    let appender = logging::$cls::$method(
-                        $self.service_idx,
-                        &filename,
-                        self.buffer_size.0,
-                        self.get_renderer_name(&mut $renderer_name, "json"),
-                        Box::new(filter),
-                    )?;
-                    appenders.push(Box::new(appender));
+                    appenders.push(Box::new(logging::ConsoleAppender::new(
+                        self.service_idx,
+                        "colored",
+                        Box::new(FilterConifg {
+                            level,
+                            level_equal: false,
+                        }),
+                    )));
                 }
-            };
-        }
+                Appender::File {
+                    level,
+                    equal,
+                    daily,
+                    bufsize,
+                } => {
+                    let level =
+                        log::Level::from_str(&(level.clone()).unwrap_or("trace".to_string()))
+                            .unwrap_or(log::Level::Trace);
+                    let equal = equal.unwrap_or(false);
 
-        if self.daily_roration {
-            make_appenders!(
-                self,
-                renderer_names,
-                filter,
-                appenders,
-                RotationFileAppender,
-                daily
-            );
-        } else {
-            make_appenders!(self, renderer_names, filter, appenders, FileAppender, new);
+                    let mut path = {
+                        if self.service_name.is_empty() {
+                            format!("{}/httpd.{}.log", logpath, level)
+                        } else {
+                            format!("{}/{}/{}.log", logpath, self.service_name, level)
+                        }
+                    };
+                    if fps.contains(&path) {
+                        path = {
+                            if self.service_name.is_empty() {
+                                format!("{}/httpd.{}.{}.log", logpath, level, idx)
+                            } else {
+                                format!("{}/{}/{}.{}.log", logpath, self.service_name, level, idx)
+                            }
+                        };
+                    }
+                    fps.insert(path.clone());
+
+                    let filter = FilterConifg {
+                        level,
+                        level_equal: equal,
+                    };
+
+                    if *daily {
+                        appenders.push(Box::new(logging::RotationFileAppender::daily(
+                            self.service_idx,
+                            &path,
+                            bufsize.0,
+                            "json",
+                            Box::new(filter),
+                        )?));
+                    } else {
+                        appenders.push(Box::new(logging::FileAppender::new(
+                            self.service_idx,
+                            &path,
+                            bufsize.0,
+                            "json",
+                            Box::new(filter),
+                        )?));
+                    }
+                }
+            }
         }
-        Ok(Some((appenders, renderer_names)))
+        Ok(Some(appenders))
     }
 }

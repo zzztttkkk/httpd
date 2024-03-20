@@ -41,6 +41,12 @@ pub struct Config {
     #[serde(default, alias = "Logging", alias = "Log", alias = "log")]
     pub logging: LoggingConfig,
 
+    #[serde(default, alias = "LogPath", alias = "log_path")]
+    pub logpath: String,
+
+    #[serde(default, alias = "LogLevel", alias = "log_level")]
+    pub loglevel: Option<String>,
+
     #[serde(default, alias = "Tcp")]
     pub tcp: TcpConfig,
 
@@ -131,7 +137,6 @@ impl Config {
         if config.services.len() < 1 {
             let mut service = ServiceConfig::default();
             service.name = "helloworld".to_string();
-            service.logging.debug = Some(true);
             service.tcp.addr = "0.0.0.0:8080".to_string();
             service.service = Service::HelloWorld;
             service.host = "*".to_string();
@@ -147,6 +152,9 @@ impl Config {
         self.runtime.autofix()?;
 
         self.logging.autofix("", None)?;
+        if self.logpath.is_empty() {
+            self.logpath = "./logs/".to_string();
+        }
 
         self.tcp.autofix(None)?;
 
@@ -172,25 +180,25 @@ impl Config {
         let mut appenders = vec![];
         let mut renderer_names = HashSet::<String>::new();
 
-        match self.logging.init()? {
-            Some(ar) => {
-                appenders.extend(ar.0);
-                renderer_names.extend(ar.1);
+        match self.logging.init(&self.logpath)? {
+            Some(aps) => {
+                appenders.extend(aps);
             }
             None => {}
         }
 
         for service in self.services.values() {
-            match service.logging.init()? {
-                Some(ar) => {
-                    appenders.extend(ar.0);
-                    renderer_names.extend(ar.1);
+            match service.logging.init(&self.logpath)? {
+                Some(aps) => {
+                    appenders.extend(aps);
                 }
                 None => {}
             }
         }
 
         for (idx, appender) in appenders.iter().enumerate() {
+            renderer_names.insert(appender.renderer().to_string());
+
             let idxes = self
                 .service_logging_appender_map
                 .get_mut(appender.service())
@@ -207,13 +215,13 @@ impl Config {
                     let mut builder = ColorfulLineRendererBuilder::new();
                     builder
                         .with_name(&name)
-                        .with_timelayout(&self.logging.time_layout);
+                        .with_timelayout(&self.logging.timelayout);
                     renderers.push(Box::new(builder.finish()));
                 }
                 "" | "json" | "jsonlinerenderer" => {
                     renderers.push(Box::new(JsonLineRenderer::new(
                         &name,
-                        &self.logging.time_layout,
+                        &self.logging.timelayout,
                     )));
                 }
                 _ => {
@@ -225,7 +233,7 @@ impl Config {
             }
         }
 
-        let level = match self.logging.level.as_ref() {
+        let level = match self.loglevel.as_ref() {
             Some(level) => match log::Level::from_str(level) {
                 Ok(v) => v,
                 Err(_) => log::Level::Trace,

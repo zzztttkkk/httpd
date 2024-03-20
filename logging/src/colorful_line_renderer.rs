@@ -37,7 +37,7 @@ impl Renderer for ColorfulLineRenderer {
         if self.name.is_empty() {
             return "ColorfulLineRenderer";
         }
-        self.name()
+        &self.name
     }
 
     fn render(&self, item: &Item, buf: &mut Vec<u8>) {

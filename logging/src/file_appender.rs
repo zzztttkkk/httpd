@@ -45,13 +45,17 @@ impl FileAppender {
     pub fn new(
         service: usize,
         fp: &str,
-        bufsize: usize,
+        mut bufsize: usize,
         renderer: &str,
         filter: Box<dyn Filter>,
     ) -> anyhow::Result<Self> {
         let fp = anyhow::result(Self::open(fp))?;
 
         let fp = tokio::fs::File::from_std(fp);
+
+        if bufsize < 8092 {
+            bufsize = 8092;
+        }
 
         Ok(Self {
             service_idx: service,

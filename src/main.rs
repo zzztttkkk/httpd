@@ -47,7 +47,6 @@ fn load_config() -> anyhow::Result<Config> {
     }
 
     let mut config = Config::default();
-    config.logging.debug = Some(true);
     config.autofix()?;
     Ok(config)
 }
