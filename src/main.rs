@@ -262,9 +262,9 @@ fn run_per_core(config: &'static Config) -> anyhow::Result<()> {
 }
 
 fn main() -> anyhow::Result<()> {
-    let config: Config = load_config()?;
-    let config: &'static Config = unsafe { std::mem::transmute(&config) };
+    let mut config: Config = load_config()?;
     let _g = config.logging()?;
+    let config: &'static Config = unsafe { std::mem::transmute(&config) };
 
     log::info!("load configuration ok, pid: {}", std::process::id());
 

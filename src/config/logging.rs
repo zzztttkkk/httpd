@@ -11,6 +11,9 @@ pub struct LoggingConfig {
     #[serde(skip)]
     service_name: String,
 
+    #[serde(skip)]
+    service_idx: usize,
+
     #[serde(default, alias = "Disable")]
     pub disable: Option<bool>,
 
@@ -41,39 +44,28 @@ pub struct LoggingConfig {
 
 #[derive(Clone, Default)]
 struct FilterConifg {
-    service_name: String,
     level: Option<log::Level>,
     level_equal: Option<bool>,
 }
 
-impl FilterConifg {
-    fn by_level(&self, item: &logging::Item) -> bool {
+impl logging::Filter for FilterConifg {
+    fn filter(&self, item: &logging::Item) -> bool {
         match self.level {
             Some(level) => {
                 if self.level_equal.is_some() && self.level_equal.unwrap() {
-                    return item.level == level;
+                    item.level == level
+                } else {
+                    item.level >= level
                 }
-                return item.level >= level;
             }
-            None => {}
+            None => true,
         }
-        true
-    }
-}
-
-impl logging::Filter for FilterConifg {
-    fn filter(&self, item: &logging::Item) -> bool {
-        if !self.by_level(item) {
-            return false;
-        }
-        return item.service.eq(self.service_name.as_str());
     }
 }
 
 impl LoggingConfig {
     pub(crate) fn autofix(&mut self, name: &str, root: Option<&Self>) -> anyhow::Result<()> {
         self.service_name = name.to_string();
-
         match root {
             Some(root) => {
                 if root.disable.is_some() && root.disable.unwrap() {
@@ -118,7 +110,6 @@ impl LoggingConfig {
         let mut renderer_names = HashSet::new();
 
         let mut filter = FilterConifg::default();
-        filter.service_name = self.service_name.clone();
 
         match self.level.as_ref() {
             Some(level) => match log::Level::from_str(&level) {
@@ -134,7 +125,7 @@ impl LoggingConfig {
 
         if self.debug.is_some() && self.debug.unwrap() {
             appenders.push(Box::new(logging::ConsoleAppender::new(
-                self.service_name.as_str(),
+                self.service_idx,
                 self.get_renderer_name(&mut renderer_names, "colored"),
                 Box::new(filter.clone()),
             )));
@@ -159,7 +150,7 @@ impl LoggingConfig {
                         filter.level = Some(v);
                         filter.level_equal = Some(true);
                         let appender = logging::$cls::$method(
-                            $self.service_name.as_str(),
+                            $self.service_idx,
                             &filename,
                             $self.buffer_size.0,
                             $self.get_renderer_name(&mut $renderer_name, "json"),
@@ -170,7 +161,7 @@ impl LoggingConfig {
                 } else {
                     let filter = filter.clone();
                     let appender = logging::$cls::$method(
-                        $self.service_name.as_str(),
+                        $self.service_idx,
                         &filename,
                         self.buffer_size.0,
                         self.get_renderer_name(&mut $renderer_name, "json"),

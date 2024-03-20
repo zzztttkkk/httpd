@@ -48,10 +48,7 @@ impl Service {
         match self {
             Service::FileSystem { root } => {
                 if root.is_empty() {
-                    return anyhow::error(&format!(
-                        "fs service `{}` get an empty root path",
-                        name
-                    ));
+                    return anyhow::error(&format!("fs service `{}` get an empty root path", name));
                 }
 
                 if !std::path::Path::new(root).exists() {
@@ -62,7 +59,10 @@ impl Service {
                 }
                 Ok(())
             }
-            Service::Forward { target_addr: _, rules: _ } => Ok(()),
+            Service::Forward {
+                target_addr: _,
+                rules: _,
+            } => Ok(()),
             Service::Upstream {
                 target_addrs: _,
                 rules: _,
@@ -80,8 +80,11 @@ impl Default for Service {
 
 #[derive(Deserialize, Clone, Debug, Default)]
 pub struct ServiceConfig {
+    #[serde(skip)]
+    pub(crate) idx: usize,
+
     #[serde(default, alias = "Name")]
-    pub name: String,
+    pub(crate) name: String,
 
     #[serde(default, alias = "Host")]
     pub host: String,
@@ -114,5 +117,9 @@ impl ServiceConfig {
         self.http.autofix(Some(rhttp))?;
         self.service.autofix(&self.name)?;
         Ok(())
+    }
+
+    pub fn idx(&self) -> usize {
+        self.idx
     }
 }

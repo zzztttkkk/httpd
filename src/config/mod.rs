@@ -9,6 +9,7 @@ use ::logging::{
 };
 use serde::Deserialize;
 
+use slab::Slab;
 use utils::anyhow;
 
 use self::{
@@ -54,6 +55,9 @@ pub struct Config {
 
     #[serde(default, alias = "Services")]
     pub services: HashMap<String, ServiceConfig>,
+
+    #[serde(skip)]
+    service_logging_appender_map: Slab<Vec<usize>>,
 }
 
 impl Config {
@@ -148,6 +152,8 @@ impl Config {
 
         self.http.autofix(None)?;
 
+        self.service_logging_appender_map.insert(vec![]);
+
         for (name, service) in self.services.iter_mut() {
             let name = name.to_string();
             let name = name.trim();
@@ -155,13 +161,14 @@ impl Config {
                 return anyhow::error(&format!("empty service name"));
             }
             service.name = name.to_string();
+            service.idx = self.service_logging_appender_map.insert(vec![]);
             service.autofix(&self.logging, &self.tcp, &self.http)?
         }
 
         Ok(())
     }
 
-    pub fn logging(&self) -> anyhow::Result<ShutdownGuard> {
+    pub fn logging(&mut self) -> anyhow::Result<ShutdownGuard> {
         let mut appenders = vec![];
         let mut renderer_names = HashSet::<String>::new();
 
@@ -181,6 +188,15 @@ impl Config {
                 }
                 None => {}
             }
+        }
+
+        for (idx, appender) in appenders.iter().enumerate() {
+            let idxes = self
+                .service_logging_appender_map
+                .get_mut(appender.service())
+                .unwrap();
+
+            idxes.push(idx);
         }
 
         let mut renderers: Vec<Box<dyn Renderer>> = vec![];
@@ -216,7 +232,13 @@ impl Config {
             },
             None => log::Level::Trace,
         };
-        logging_init(level, appenders, renderers)
+
+        logging_init(
+            level,
+            appenders,
+            renderers,
+            self.service_logging_appender_map.clone(),
+        )
     }
 }
 
