@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-
+use slab::Slab;
 use utils::anyhow;
 
 use crate::{appender::Appender, appender::Renderer, consumer::Consumer, item::Item};
@@ -63,6 +62,7 @@ pub fn init(
     level: log::Level,
     appenders: Vec<Box<dyn Appender>>,
     renderers: Vec<Box<dyn Renderer>>,
+    samap: Slab<Vec<usize>>,
 ) -> anyhow::Result<ShutdownGuard> {
     let (sx, rx) = std::sync::mpsc::channel();
     let dispatcher = Dispatcher { sx };
@@ -80,7 +80,7 @@ pub fn init(
         appenders,
         renderers,
         armap: Vec::with_capacity(c),
-        servicemap: HashMap::new(),
+        samap,
     };
     consumer.init()?;
 

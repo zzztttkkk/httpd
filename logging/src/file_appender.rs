@@ -7,7 +7,7 @@ pub struct FileAppender {
     inner: tokio::io::BufWriter<tokio::fs::File>,
     filter: Box<dyn Filter>,
     render_name: String,
-    service_name: String,
+    service_idx: usize,
     bufsize: usize,
 }
 
@@ -18,8 +18,8 @@ impl Appender for FileAppender {
         &self.render_name
     }
 
-    fn service(&self) -> &str {
-        &self.service_name
+    fn service(&self) -> usize {
+        self.service_idx
     }
 
     #[inline]
@@ -43,7 +43,7 @@ impl FileAppender {
     }
 
     pub fn new(
-        service: &str,
+        service: usize,
         fp: &str,
         bufsize: usize,
         renderer: &str,
@@ -54,7 +54,7 @@ impl FileAppender {
         let fp = tokio::fs::File::from_std(fp);
 
         Ok(Self {
-            service_name: service.to_string(),
+            service_idx: service,
             inner: tokio::io::BufWriter::with_capacity(bufsize, fp),
             render_name: renderer.to_string(),
             filter,

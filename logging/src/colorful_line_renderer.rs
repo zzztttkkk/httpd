@@ -120,19 +120,24 @@ impl ColorfulLineRendererBuilder {
 #[cfg(test)]
 mod tests {
     use log::Level;
+    use slab::Slab;
 
     use crate::ColorfulLineRenderer;
 
     #[test]
     fn test_colors() {
+        let mut slab = Slab::new();
+        slab.insert(vec![0]);
+
         let _g = crate::init(
             Level::Trace,
             vec![Box::new(crate::ConsoleAppender::new(
-                "",
+                0,
                 "ColorfulLineRenderer",
                 crate::appender::filter(|_| true),
             ))],
             vec![Box::new(ColorfulLineRenderer::default())],
+            slab,
         )
         .unwrap();
 

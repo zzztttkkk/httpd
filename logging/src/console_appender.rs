@@ -3,7 +3,7 @@ use tokio::io::AsyncWriteExt;
 use crate::{appender::Appender, appender::Filter, item::Item};
 
 pub struct ConsoleAppender {
-    service_name: String,
+    service_idx: usize,
     renderer_name: String,
     filter: Box<dyn Filter>,
     inner: tokio::io::Stdout,
@@ -27,15 +27,15 @@ impl Appender for ConsoleAppender {
         self.filter.filter(item)
     }
 
-    fn service(&self) -> &str {
-        &self.service_name
+    fn service(&self) -> usize {
+        self.service_idx
     }
 }
 
 impl ConsoleAppender {
-    pub fn new(service: &str, renderer: &str, filter: Box<dyn Filter>) -> Self {
+    pub fn new(service: usize, renderer: &str, filter: Box<dyn Filter>) -> Self {
         Self {
-            service_name: service.to_string(),
+            service_idx: service,
             renderer_name: renderer.to_string(),
             filter,
             inner: tokio::io::stdout(),

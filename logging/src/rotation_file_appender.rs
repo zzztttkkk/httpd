@@ -30,7 +30,7 @@ impl Appender for RotationFileAppender {
         self.inner.renderer()
     }
 
-    fn service(&self) -> &str {
+    fn service(&self) -> usize {
         self.inner.service()
     }
 
@@ -61,7 +61,7 @@ impl Appender for RotationFileAppender {
 
 impl RotationFileAppender {
     pub fn daily(
-        service: &str,
+        service: usize,
         fp: &str,
         bufsize: usize,
         renderer: &str,
@@ -72,7 +72,7 @@ impl RotationFileAppender {
 
     pub fn new(
         kind: RotationKind,
-        service: &str,
+        service: usize,
         fp: &str,
         bufsize: usize,
         renderer: &str,
@@ -200,7 +200,7 @@ mod tests {
     fn test_rotation_new() -> anyhow::Result<()> {
         let _ = RotationFileAppender::new(
             super::RotationKind::Daily,
-            "",
+            0,
             "../log/v.log",
             8092,
             "",

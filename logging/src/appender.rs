@@ -28,7 +28,7 @@ pub trait Appender: Send + Sync {
     async fn writeall(&mut self, buf: &[u8]) -> std::io::Result<()>;
     async fn flush(&mut self) -> std::io::Result<()>;
 
-    fn service(&self) -> &str; // service name
+    fn service(&self) -> usize; // service name
     fn renderer(&self) -> &str; // renderer name
     fn filter(&self, item: &Item) -> bool;
 }

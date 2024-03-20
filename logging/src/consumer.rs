@@ -1,5 +1,6 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
+use slab::Slab;
 use utils::anyhow;
 
 use crate::{
@@ -10,8 +11,8 @@ use crate::{
 pub(crate) struct Consumer {
     pub(crate) appenders: Vec<Box<dyn Appender>>,
     pub(crate) renderers: Vec<Box<dyn Renderer>>,
-    pub(crate) armap: Vec<usize>, // appender_idx -> renderer_idx
-    pub(crate) servicemap: HashMap<String, Vec<usize>>, // service_name -> vec[appender_idx]
+    pub(crate) armap: Vec<usize>,       // appender_idx -> renderer_idx
+    pub(crate) samap: Slab<Vec<usize>>, // service_name -> vec[appender_idx]
 }
 
 fn unique(names: impl Iterator<Item = String>) -> bool {
@@ -71,23 +72,11 @@ impl Consumer {
                 }
             }
         }
-
-        for (idx, appender) in self.appenders.iter().enumerate() {
-            match self.servicemap.get_mut(appender.service()) {
-                Some(idxes) => {
-                    idxes.push(idx);
-                }
-                None => {
-                    self.servicemap
-                        .insert(appender.service().to_string(), vec![idx]);
-                }
-            }
-        }
         Ok(())
     }
 
     fn filter_when_single_renderer(&self, item: &Item, dest: &mut smallvec::SmallVec<[usize; 12]>) {
-        match self.servicemap.get(item.service.as_str()) {
+        match self.samap.get(item.service) {
             None => {
                 return;
             }
@@ -141,7 +130,7 @@ impl Consumer {
         renderer_idxes: &mut smallvec::SmallVec<[usize; 12]>,
         appender_renderer_map: &mut smallvec::SmallVec<[usize; 12]>,
     ) {
-        match self.servicemap.get(item.service.as_str()) {
+        match self.samap.get(item.service) {
             None => {
                 return;
             }
