@@ -2,9 +2,7 @@ use std::sync::Arc;
 
 use crate::{
     config::Config,
-    services::{
-        common::Service, fs::FsService, helloworld::HelloWorldService,
-    },
+    services::{common::Service, fs::FsService, helloworld::HelloWorldService},
 };
 use clap::Parser;
 use config::service::ServiceConfig;
@@ -266,16 +264,7 @@ fn run_per_core(config: &'static Config) -> anyhow::Result<()> {
 fn main() -> anyhow::Result<()> {
     let config: Config = load_config()?;
     let config: &'static Config = unsafe { std::mem::transmute(&config) };
-
-    let _g = logging::init(
-        log::Level::Trace,
-        vec![Box::new(logging::ConsoleAppender::new(
-            "",
-            "ColorfulLineRenderer",
-            logging::filter(|_| true),
-        ))],
-        vec![Box::new(logging::ColorfulLineRenderer::default())],
-    )?;
+    let _g = config.logging()?;
 
     log::info!("load configuration ok, pid: {}", std::process::id());
 

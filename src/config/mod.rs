@@ -1,5 +1,12 @@
-use std::collections::HashMap;
+use std::{
+    collections::{HashMap, HashSet},
+    str::FromStr,
+    vec,
+};
 
+use ::logging::{
+    init as logging_init, ColorfulLineRendererBuilder, JsonLineRenderer, Renderer, ShutdownGuard,
+};
 use serde::Deserialize;
 
 use utils::anyhow;
@@ -154,7 +161,63 @@ impl Config {
         Ok(())
     }
 
-    pub fn init(&self) {}
+    pub fn logging(&self) -> anyhow::Result<ShutdownGuard> {
+        let mut appenders = vec![];
+        let mut renderer_names = HashSet::<String>::new();
+
+        match self.logging.init()? {
+            Some(ar) => {
+                appenders.extend(ar.0);
+                renderer_names.extend(ar.1);
+            }
+            None => {}
+        }
+
+        for service in self.services.values() {
+            match service.logging.init()? {
+                Some(ar) => {
+                    appenders.extend(ar.0);
+                    renderer_names.extend(ar.1);
+                }
+                None => {}
+            }
+        }
+
+        let mut renderers: Vec<Box<dyn Renderer>> = vec![];
+
+        for name in renderer_names {
+            match name.as_str().to_lowercase().trim() {
+                "color" | "colored" | "colorful" | "colorfullinerenderer" => {
+                    let mut builder = ColorfulLineRendererBuilder::new();
+                    builder
+                        .with_name(&name)
+                        .with_timelayout(&self.logging.time_layout);
+                    renderers.push(Box::new(builder.finish()));
+                }
+                "" | "json" | "jsonlinerenderer" => {
+                    renderers.push(Box::new(JsonLineRenderer::new(
+                        &name,
+                        &self.logging.time_layout,
+                    )));
+                }
+                _ => {
+                    return anyhow::error(&format!(
+                        "unknown log line renderer name(`json`, `colored`), `{}`",
+                        &name
+                    ));
+                }
+            }
+        }
+
+        let level = match self.logging.level.as_ref() {
+            Some(level) => match log::Level::from_str(level) {
+                Ok(v) => v,
+                Err(_) => log::Level::Trace,
+            },
+            None => log::Level::Trace,
+        };
+        logging_init(level, appenders, renderers)
+    }
 }
 
 #[cfg(test)]

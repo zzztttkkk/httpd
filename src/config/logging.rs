@@ -34,6 +34,9 @@ pub struct LoggingConfig {
 
     #[serde(default, alias = "RendererName")]
     pub renderer_name: String,
+
+    #[serde(default, alias = "TimeLayout")]
+    pub time_layout: String,
 }
 
 #[derive(Clone, Default)]

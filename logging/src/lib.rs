@@ -13,7 +13,7 @@ pub use appender::{filter, Appender, Filter, Renderer};
 pub use color::{Color, ColorScheme, LevelColors};
 pub use colorful_line_renderer::{ColorfulLineRenderer, ColorfulLineRendererBuilder};
 pub use console_appender::ConsoleAppender;
-pub use dispatcher::init;
+pub use dispatcher::{init, ShutdownGuard};
 pub use file_appender::FileAppender;
 pub use item::Item;
 pub use json_line_renderer::JsonLineRenderer;
