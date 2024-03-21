@@ -33,11 +33,11 @@ pub struct Rule {
     #[serde(default, alias = "Match")]
     r#match: Match,
 
-    #[serde(default, alias = "InputRewrites", alias = "input_rewrites")]
-    inputrewrites: Option<Rewrite>,
+    #[serde(default, alias = "ReqRewrites", alias = "req_rewrites")]
+    reqrewrites: Option<Rewrite>,
 
-    #[serde(default, alias = "OnputRewrites", alias = "onput_rewrites")]
-    outputrewrites: Option<Rewrite>,
+    #[serde(default, alias = "RespRewrites", alias = "resp_rewrites")]
+    resprewrites: Option<Rewrite>,
 }
 
 #[derive(Deserialize, Clone, Debug)]
