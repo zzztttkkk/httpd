@@ -79,14 +79,15 @@ impl logging::Filter for FilterConifg {
         if self.level_equal {
             item.level == self.level
         } else {
-            item.level >= self.level
+            item.level <= self.level
         }
     }
 }
 
 impl LoggingConfig {
-    pub(crate) fn autofix(&mut self, name: &str, root: Option<&Self>) -> anyhow::Result<()> {
+    pub(crate) fn autofix(&mut self, name: &str, idx: usize) -> anyhow::Result<()> {
         self.service_name = name.to_string();
+        self.service_idx = idx;
         Ok(())
     }
 

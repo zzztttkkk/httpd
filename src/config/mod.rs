@@ -10,7 +10,7 @@ use ::logging::{
 use serde::Deserialize;
 
 use slab::Slab;
-use utils::anyhow;
+use utils::{anyhow, paths};
 
 use self::{
     http::HttpConfig,
@@ -92,16 +92,13 @@ impl Config {
                         Ok(mut service) => {
                             service.name = service.name.trim().to_string();
                             if service.name.is_empty() {
-                                return anyhow::error(&format!(
-                                    "service name is empty in file `{:?}`",
-                                    &entry
-                                ));
+                                service.name = paths::namewithoutext(&_path)?;
                             }
 
                             if self.services.contains_key(&service.name) {
                                 return anyhow::error(&format!(
-                                    "service name `{}` is exists",
-                                    &service.name
+                                    "service name `{}` is exists, file: {}",
+                                    &service.name, &_path
                                 ));
                             }
                             self.services.insert(service.name.clone(), service);
@@ -151,7 +148,7 @@ impl Config {
     pub fn autofix(&mut self) -> anyhow::Result<()> {
         self.runtime.autofix()?;
 
-        self.logging.autofix("", None)?;
+        self.logging.autofix("", 0)?;
         if self.logpath.is_empty() {
             self.logpath = "./logs/".to_string();
         }
@@ -160,7 +157,7 @@ impl Config {
 
         self.http.autofix(None)?;
 
-        self.service_logging_appender_map.insert(vec![]);
+        let fidx = self.service_logging_appender_map.insert(vec![]);
 
         for (name, service) in self.services.iter_mut() {
             let name = name.to_string();

@@ -22,14 +22,6 @@ impl ValBuf {
     fn str(&self) -> &str {
         unsafe { std::str::from_utf8_unchecked(self.0.as_slice()) }
     }
-
-    fn unqoute(&self) -> &str {
-        let v = unsafe { std::str::from_utf8_unchecked(self.0.as_slice()) };
-        if v.starts_with('"') && v.starts_with('"') {
-            return &(v[1..v.len() - 1]);
-        }
-        return v;
-    }
 }
 
 impl std::io::Write for ValBuf {

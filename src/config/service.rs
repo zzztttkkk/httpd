@@ -112,7 +112,7 @@ impl ServiceConfig {
         rtcp: &TcpConfig,
         rhttp: &HttpConfig,
     ) -> anyhow::Result<()> {
-        self.logging.autofix(&self.name, Some(rlog))?;
+        self.logging.autofix(&self.name, self.idx)?;
         self.tcp.autofix(Some(rtcp))?;
         self.http.autofix(Some(rhttp))?;
         self.service.autofix(&self.name)?;
