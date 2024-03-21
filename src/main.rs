@@ -163,22 +163,16 @@ async fn run(config: &'static ServiceConfig) -> anyhow::Result<()> {
     println!("httpd: {}, serve as {}", logo, config.service.kind());
 
     match &config.service {
-        config::service::Service::HelloWorld => {
+        config::service::Service::HelloWorld { .. } => {
             let service = HelloWorldService::new(config);
             (accept_loop(listener, tlscfg, config.tcp.tls.timeout.0, service).await)?;
         }
-        config::service::Service::FileSystem { root: _ } => {
+        config::service::Service::FileSystem { .. } => {
             let service = FsService::new(config);
             (accept_loop(listener, tlscfg, config.tcp.tls.timeout.0, service).await)?;
         }
-        config::service::Service::Forward {
-            target_addr: _,
-            rules: _,
-        } => todo!(),
-        config::service::Service::Upstream {
-            target_addrs: _,
-            rules: _,
-        } => todo!(),
+        config::service::Service::Forward { .. } => todo!(),
+        config::service::Service::Upstream { .. } => todo!(),
     };
 
     Ok(())

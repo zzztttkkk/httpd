@@ -19,14 +19,60 @@ pub struct Match {
     pattern: Option<String>,
 
     #[serde(default, alias = "Headers")]
-    headers: HashMap<String, String>, //
+    headers: HashMap<String, String>,
 }
 
 #[derive(Deserialize, Clone, Debug, Default)]
 pub struct Rewrite {}
 
+#[derive(Deserialize, Clone, Debug)]
+pub enum StaticResponseBody {
+    #[serde(alias = "none", alias = "null", alias = "nil")]
+    None,
+    #[serde(alias = "text", alias = "Txt", alias = "txt")]
+    Text(String),
+    #[serde(alias = "file")]
+    File(String),
+}
+
+impl Default for StaticResponseBody {
+    fn default() -> Self {
+        Self::None
+    }
+}
+
 #[derive(Deserialize, Clone, Debug, Default)]
-pub struct EarlyReturn {}
+pub struct StaticResponse {
+    #[serde(default, alias = "Code")]
+    code: Option<u32>,
+
+    #[serde(default, alias = "Reason")]
+    reason: Option<String>,
+
+    #[serde(default, alias = "Headers")]
+    headers: Vec<String>,
+
+    #[serde(default, alias = "Body")]
+    body: StaticResponseBody,
+}
+
+#[derive(Deserialize, Clone, Debug, Default)]
+pub struct EarlyReturnPattern {
+    #[serde(default, alias = "Matchs")]
+    matchs: Vec<Match>,
+
+    #[serde(default, alias = "Resp", alias = "response", alias = "Response")]
+    resp: Option<StaticResponse>,
+}
+
+#[derive(Deserialize, Clone, Debug, Default)]
+pub struct EarlyReturn {
+    #[serde(default, alias = "Matchs")]
+    matchs: Vec<Match>,
+
+    #[serde(default, alias = "Resp", alias = "response", alias = "Response")]
+    resp: Option<StaticResponse>,
+}
 
 #[derive(Deserialize, Clone, Debug, Default)]
 pub struct Rule {
@@ -43,9 +89,15 @@ pub struct Rule {
 #[derive(Deserialize, Clone, Debug)]
 pub enum Service {
     #[serde(alias = "helloworld")]
-    HelloWorld,
+    HelloWorld {
+        #[serde(default, alias = "Early", alias = "filter", alias = "Filter")]
+        early: Option<EarlyReturn>,
+    },
     #[serde(alias = "fs")]
     FileSystem {
+        #[serde(default, alias = "Early", alias = "filter", alias = "Filter")]
+        early: Option<EarlyReturn>,
+
         #[serde(default, alias = "Root")]
         root: String,
 
@@ -54,6 +106,9 @@ pub enum Service {
     },
     #[serde(alias = "forward")]
     Forward {
+        #[serde(default, alias = "Early", alias = "filter", alias = "Filter")]
+        early: Option<EarlyReturn>,
+
         #[serde(default, alias = "target", alias = "Target", alias = "TargetAddress")]
         target_addr: String,
 
@@ -62,6 +117,9 @@ pub enum Service {
     },
     #[serde(alias = "upstream")]
     Upstream {
+        #[serde(default, alias = "Early", alias = "filter", alias = "Filter")]
+        early: Option<EarlyReturn>,
+
         #[serde(
             default,
             alias = "targets",
@@ -73,7 +131,7 @@ pub enum Service {
         target_addrs: Vec<String>, // ip[? :port][? #weights]
 
         #[serde(default, alias = "Rules")]
-        rules: HashMap<String, Rule>,
+        rules: Vec<Rule>,
     },
 }
 
@@ -93,37 +151,25 @@ impl Service {
                 }
                 Ok(())
             }
-            Service::Forward {
-                target_addr: _,
-                rules: _,
-            } => Ok(()),
-            Service::Upstream {
-                target_addrs: _,
-                rules: _,
-            } => Ok(()),
+            Service::Forward { .. } => Ok(()),
+            Service::Upstream { .. } => Ok(()),
             _ => Ok(()),
         }
     }
 
     pub fn kind(&self) -> String {
         match self {
-            Service::HelloWorld => "Hello world".to_string(),
-            Service::FileSystem { root, rewrites: _ } => format!("Fs{{{}}}", root),
-            Service::Forward {
-                target_addr: _,
-                rules: _,
-            } => format!("Forward"),
-            Service::Upstream {
-                target_addrs: _,
-                rules: _,
-            } => format!("Upstream"),
+            Service::HelloWorld { .. } => "Hello world".to_string(),
+            Service::FileSystem { root, .. } => format!("Fs{{{}}}", root),
+            Service::Forward { .. } => format!("Forward"),
+            Service::Upstream { .. } => format!("Upstream"),
         }
     }
 }
 
 impl Default for Service {
     fn default() -> Self {
-        Self::HelloWorld
+        Self::HelloWorld { early: None }
     }
 }
 

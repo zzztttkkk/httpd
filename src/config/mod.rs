@@ -135,7 +135,7 @@ impl Config {
             let mut service = ServiceConfig::default();
             service.name = "helloworld".to_string();
             service.tcp.addr = "0.0.0.0:8080".to_string();
-            service.service = Service::HelloWorld;
+            service.service = Service::HelloWorld { early: None };
             service.host = "*".to_string();
             config.services.insert("helloworld".to_string(), service);
         }
