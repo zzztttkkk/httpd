@@ -36,12 +36,12 @@ impl Service for HelloWorldService {
         let reqversion;
 
         {
-            log::trace!("Request From {}", ctx.addr);
+            log::trace!(service = self.config().idx(); "Request From {}", ctx.addr);
             let req = RequestReader::from(&*req);
             log::trace!("{} {} {:?}", req.method(), req.rawuri(), req.version());
             req.headers().each(&mut |k, vs| {
                 for v in vs {
-                    log::trace!("{}: {}", k, v);
+                    log::trace!(service = self.config().idx(); "{}: {}", k, v);
                 }
                 true
             });
@@ -53,10 +53,10 @@ impl Service for HelloWorldService {
             } else {
                 match std::str::from_utf8(req.body().inner()) {
                     Ok(txt) => {
-                        log::trace!("PrintableBody:\r\n---------------------\r\n{}\r\n---------------------", txt);
+                        log::trace!(service = self.config().idx(); "PrintableBody:\r\n---------------------\r\n{}\r\n---------------------", txt);
                     }
                     Err(_) => {
-                        log::trace!("BinaryBody: {}", req.body().size());
+                        log::trace!(service = self.config().idx(); "BinaryBody: {}", req.body().size());
                     }
                 }
             }

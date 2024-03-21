@@ -7,4 +7,5 @@ pub(crate) async fn serve<
     _ctx: ConnContext<R, W>,
     _req: Message,
 ) {
+    todo!("http2");
 }

@@ -160,7 +160,7 @@ async fn run(config: &'static ServiceConfig) -> anyhow::Result<()> {
     if tlscfg.is_some() {
         logo = format!("{}, tls ✅", logo);
     }
-    log::info!(service = config.name.as_str() ;"{}", logo);
+    println!("httpd: {}, serve as {}", logo, config.service.kind());
 
     match &config.service {
         config::service::Service::HelloWorld => {
@@ -265,7 +265,7 @@ fn main() -> anyhow::Result<()> {
     let _g = config.logging()?;
     let config: &'static Config = unsafe { std::mem::transmute(&config) };
 
-    log::info!("load configuration ok, pid: {}", std::process::id());
+    println!("httpd: load configuration ok, pid: {}", std::process::id());
 
     if config.runtime.per_core.is_some() && config.runtime.per_core.unwrap() {
         run_per_core(config)?;
@@ -273,6 +273,6 @@ fn main() -> anyhow::Result<()> {
         run_multi_threads(config)?;
     }
 
-    log::info!("shutdown");
+    println!("httpd: shutdown");
     Ok(())
 }

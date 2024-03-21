@@ -7,7 +7,38 @@ use utils::anyhow;
 use super::{http::HttpConfig, logging::LoggingConfig, tcp::TcpConfig};
 
 #[derive(Deserialize, Clone, Debug, Default)]
-pub struct ProxyRule {}
+pub struct Match {
+    #[serde(
+        default,
+        alias = "Pattern",
+        alias = "regexp",
+        alias = "Regexp",
+        alias = "regex",
+        alias = "Regex"
+    )]
+    pattern: Option<String>,
+
+    #[serde(default, alias = "Headers")]
+    headers: HashMap<String, String>, //
+}
+
+#[derive(Deserialize, Clone, Debug, Default)]
+pub struct Rewrite {}
+
+#[derive(Deserialize, Clone, Debug, Default)]
+pub struct EarlyReturn {}
+
+#[derive(Deserialize, Clone, Debug, Default)]
+pub struct Rule {
+    #[serde(default, alias = "Match")]
+    r#match: Match,
+
+    #[serde(default, alias = "InputRewrites", alias = "input_rewrites")]
+    inputrewrites: Option<Rewrite>,
+
+    #[serde(default, alias = "OnputRewrites", alias = "onput_rewrites")]
+    outputrewrites: Option<Rewrite>,
+}
 
 #[derive(Deserialize, Clone, Debug)]
 pub enum Service {
@@ -17,6 +48,9 @@ pub enum Service {
     FileSystem {
         #[serde(default, alias = "Root")]
         root: String,
+
+        #[serde(default, alias = "Rewrites")]
+        rewrites: HashMap<String, Rewrite>,
     },
     #[serde(alias = "forward")]
     Forward {
@@ -24,7 +58,7 @@ pub enum Service {
         target_addr: String,
 
         #[serde(default, alias = "Rules")]
-        rules: HashMap<String, ProxyRule>,
+        rules: HashMap<String, Rule>,
     },
     #[serde(alias = "upstream")]
     Upstream {
@@ -39,14 +73,14 @@ pub enum Service {
         target_addrs: Vec<String>, // ip[? :port][? #weights]
 
         #[serde(default, alias = "Rules")]
-        rules: HashMap<String, ProxyRule>,
+        rules: HashMap<String, Rule>,
     },
 }
 
 impl Service {
     pub fn autofix(&mut self, name: &str) -> anyhow::Result<()> {
         match self {
-            Service::FileSystem { root } => {
+            Service::FileSystem { root, rewrites } => {
                 if root.is_empty() {
                     return anyhow::error(&format!("fs service `{}` get an empty root path", name));
                 }
@@ -68,6 +102,21 @@ impl Service {
                 rules: _,
             } => Ok(()),
             _ => Ok(()),
+        }
+    }
+
+    pub fn kind(&self) -> String {
+        match self {
+            Service::HelloWorld => "Hello world".to_string(),
+            Service::FileSystem { root, rewrites: _ } => format!("Fs{{{}}}", root),
+            Service::Forward {
+                target_addr: _,
+                rules: _,
+            } => format!("Forward"),
+            Service::Upstream {
+                target_addrs: _,
+                rules: _,
+            } => format!("Upstream"),
         }
     }
 }
