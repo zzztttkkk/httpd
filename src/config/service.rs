@@ -138,7 +138,7 @@ pub enum Service {
 impl Service {
     pub fn autofix(&mut self, name: &str) -> anyhow::Result<()> {
         match self {
-            Service::FileSystem { root, rewrites } => {
+            Service::FileSystem { root, .. } => {
                 if root.is_empty() {
                     return anyhow::error(&format!("fs service `{}` get an empty root path", name));
                 }
