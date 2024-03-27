@@ -16,7 +16,7 @@ pub struct Match {
         alias = "regex",
         alias = "Regex"
     )]
-    pattern: Option<String>,
+    path: Option<String>,
 
     #[serde(default, alias = "Headers")]
     headers: HashMap<String, String>,

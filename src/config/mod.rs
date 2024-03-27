@@ -24,6 +24,7 @@ pub mod bytes_size;
 pub mod duration_in_millis;
 pub mod http;
 pub mod logging;
+mod r#match;
 pub mod runtime;
 pub mod service;
 pub mod split_uint;
