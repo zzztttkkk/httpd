@@ -12,7 +12,7 @@ strgins =  { "[" ~ (string) ~ ("," ~ string)* ~ "]" }
 
 Logics = { ^"and" | ^"or" }
 
-ConditionKinds     = { ^"method" | ^"path" | ^"query" | ^"header" | ^"cookie" | ^"useragent" | ^"ua" | ^"form" | ^"json" | ^"ref" }
+ConditionKinds     = { ^"code" | ^"method" | ^"path" | ^"query" | ^"header" | ^"cookie" | ^"useragent" | ^"ua" | ^"form" | ^"json" | ^"ref" }
 MultiValuesOpts    = { ^"all" | ^"any" | ^"first" | ^"last" | (^"nth(" ~ (ASCII_DIGIT)+ ~ ")") }
 ConditionLeftParam = { "<" ~ ident ~ (":" ~ MultiValuesOpts)? ~ ">" }
 ConditionLeft      = { ConditionKinds ~ (ConditionLeftParam)? }
