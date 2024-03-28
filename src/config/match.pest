@@ -17,10 +17,10 @@ MultiValuesOpts    = { ^"all" | ^"any" | ^"first" | ^"last" | (^"nth(" ~ (ASCII_
 ConditionLeftParam = { "<" ~ ident ~ (":" ~ MultiValuesOpts)? ~ ">" }
 ConditionLeft      = { ConditionKinds ~ (ConditionLeftParam)? }
 
-QoutedStringOpKinds = { ^"eq" | "==" | ^"gt" | ">" | ^"lt" | "<" | ^"ge" | ">=" | ^"le" | "<=" | ^"contains" | ^"match" }
+QoutedStringOpKinds = { ^"eq" | ^"gt" | ^"lt" | ^"ge" | ^"le" | ^"contains" | ^"match" }
 QoutedStringOp      = { QoutedStringOpKinds ~ string }
 
-IntOpKinds = { ^"igt" | ^"ilt" | ^"ige" | ^"ile" }
+IntOpKinds = { "==" | ">" | "<" | ">=" | "<=" }
 IntOp      = { IntOpKinds ~ (ASCII_DIGIT)+ }
 
 InOp = { ^"in" ~ strgins }

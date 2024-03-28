@@ -42,3 +42,5 @@ rustls-pemfile = { version = "2.1.0" }
 # loggging
 log = { version = "0.4.21", features = ["kv"] }
 logging = { path = "./logging" }
+pest = "2.7.8"
+pest_derive = "2.7.8"
