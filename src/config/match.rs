@@ -1,4 +1,5 @@
 use serde::de::Visitor;
+use utils::anyhow;
 
 #[derive(PartialEq, Eq)]
 pub enum CondationKind {
@@ -16,9 +17,19 @@ pub enum CondationKind {
 #[derive(PartialEq, Eq)]
 pub enum OpKind {
     Eq,
+    Lt,
+    Gt,
+    Le,
+    Ge,
+
     In,
     Contains,
     Match,
+
+    IntLt,
+    IntGt,
+    IntLe,
+    IntGe,
 }
 
 pub enum MultiValuePolicy {
@@ -33,9 +44,11 @@ pub struct Condation {
     pub kind: CondationKind,
     pub left: String,
     pub not: Option<bool>,
+    pub ignore_case: Option<bool>,
+    pub trim_space: Option<bool>,
     pub mvp: Option<MultiValuePolicy>,
     pub op: Option<OpKind>,
-    pub right: Option<String>,
+    pub right: Option<Vec<String>>,
 }
 
 impl Default for Condation {
@@ -47,15 +60,17 @@ impl Default for Condation {
             not: Default::default(),
             mvp: Default::default(),
             right: Default::default(),
+            ignore_case: Default::default(),
+            trim_space: Default::default(),
         }
     }
 }
 
 impl Condation {
-    fn from(buf: &mut bytebuffer::ByteReader) -> Result<Option<Condation>, String> {
+    fn from(buf: &mut bytebuffer::ByteReader) -> anyhow::Result<Option<Condation>> {
         let mut cond = Condation::default();
 
-        let mut word = read_word(buf).trim().to_lowercase();
+        let mut word = read_word(buf)?.trim().to_lowercase();
 
         match word.as_str() {
             "method" => {
@@ -91,17 +106,17 @@ impl Condation {
             _ => {}
         }
 
-        if !read_until_ignore_space(buf, b'<') {
-            return Err("require a `<`".to_string());
+        if !read_until_ignore_space(buf, b'<', None) {
+            return anyhow::error("require a `<`");
         }
-        word = read_word(buf);
-        if !read_until_ignore_space(buf, b'>') {
-            return Err("require a `>`".to_string());
+        word = read_word(buf)?;
+        if !read_until_ignore_space(buf, b'>', None) {
+            return anyhow::error("require a `>`");
         }
         cond.left = word;
 
         loop {
-            word = read_word(buf).trim().to_lowercase();
+            word = read_word(buf)?.trim().to_lowercase();
             if word.is_empty() {
                 break;
             }
@@ -112,38 +127,38 @@ impl Condation {
                 }
                 "all" => {
                     if cond.mvp.is_some() {
-                        return Err("multi value policy already set".to_string());
+                        return anyhow::error("multi value policy already set");
                     }
                     cond.mvp = Some(MultiValuePolicy::All);
                 }
                 "any" => {
                     if cond.mvp.is_some() {
-                        return Err("multi value policy already set".to_string());
+                        return anyhow::error("multi value policy already set");
                     }
                     cond.mvp = Some(MultiValuePolicy::Any);
                 }
                 "first" => {
                     if cond.mvp.is_some() {
-                        return Err("multi value policy already set".to_string());
+                        return anyhow::error("multi value policy already set");
                     }
                     cond.mvp = Some(MultiValuePolicy::First);
                 }
                 "last" => {
                     if cond.mvp.is_some() {
-                        return Err("multi value policy already set".to_string());
+                        return anyhow::error("multi value policy already set");
                     }
                     cond.mvp = Some(MultiValuePolicy::Last);
                 }
                 _ => {
                     if word.starts_with("nth#") {
                         if cond.mvp.is_some() {
-                            return Err("multi value policy already set".to_string());
+                            return anyhow::error("multi value policy already set");
                         }
 
                         match (word[4..]).parse::<u16>() {
                             Ok(idx) => cond.mvp = Some(MultiValuePolicy::Nth(idx)),
                             Err(_) => {
-                                return Err(format!("parse to u16 failed: `{}`", word));
+                                return anyhow::error(&format!("parse to u16 failed: `{}`", word));
                             }
                         }
                     } else {
@@ -154,21 +169,76 @@ impl Condation {
         }
 
         if cond.kind == CondationKind::MatchRef {
-            if !read_until_ignore_space(buf, b';') {
-                return Err("require a `;`".to_string());
+            if !read_until_ignore_space(buf, b';', None) {
+                return anyhow::error("require a `;`");
             }
             return Ok(Some(cond));
         }
 
-        match word.as_str() {
-            "eq" => {}
-            "in" => {}
-            "contains" => {}
-            "match" => {}
-            _ => {}
+        macro_rules! qouted_string {
+            ($op:expr) => {
+                cond.op = Some($op);
+                if !read_until_ignore_space(buf, b'"', None) {
+                    return anyhow::error("require a `\"");
+                }
+                cond.right = Some(vec![read_qouted_string(buf)?]);
+            };
         }
 
-        Ok(None)
+        match word.as_str() {
+            "eq" => {
+                qouted_string!(OpKind::Eq);
+            }
+            "lt" => {
+                qouted_string!(OpKind::Lt);
+            }
+            "gt" => {
+                qouted_string!(OpKind::Gt);
+            }
+            "le" => {
+                qouted_string!(OpKind::Le);
+            }
+            "ge" => {
+                qouted_string!(OpKind::Ge);
+            }
+
+            "intlt" => {
+                cond.op = Some(OpKind::IntLt);
+                cond.right = Some(vec![read_int(buf)?]);
+            }
+            "intgt" => {
+                cond.op = Some(OpKind::IntGt);
+                cond.right = Some(vec![read_int(buf)?]);
+            }
+            "intle" => {
+                cond.op = Some(OpKind::IntLe);
+                cond.right = Some(vec![read_int(buf)?]);
+            }
+            "intge" => {
+                cond.op = Some(OpKind::IntGe);
+                cond.right = Some(vec![read_int(buf)?]);
+            }
+
+            "in" => {
+                cond.op = Some(OpKind::In);
+                cond.right = Some(read_strings(buf)?);
+            }
+            "contains" => {
+                qouted_string!(OpKind::Contains);
+            }
+            "match" => {
+                cond.op = Some(OpKind::Match);
+                cond.right = Some(vec![read_line(buf)?]);
+            }
+            _ => {
+                return anyhow::error(&format!("unexpected operation `{}`", word));
+            }
+        }
+
+        if !read_until_ignore_space(buf, b';', None) {
+            return anyhow::error("require a `;`");
+        }
+        return Ok(Some(cond));
     }
 }
 
@@ -191,11 +261,31 @@ impl Default for Match {
     }
 }
 
-fn read_word(buf: &mut bytebuffer::ByteReader) -> String {
+fn read_int(buf: &mut bytebuffer::ByteReader) -> anyhow::Result<String> {
     let mut bytes = vec![];
 
     loop {
-        let c = buf.read_u8().unwrap();
+        let c = anyhow::result(buf.read_u8())?;
+        if bytes.is_empty() && c.is_ascii_whitespace() {
+            continue;
+        }
+        match c {
+            b'a'..=b'f' | b'A'..=b'F' | b'_' | b'0'..=b'9' | b'x' | b'X' => {
+                bytes.push(c);
+            }
+            _ => {
+                break;
+            }
+        }
+    }
+    return Ok(String::from_utf8(bytes).unwrap());
+}
+
+fn read_word(buf: &mut bytebuffer::ByteReader) -> anyhow::Result<String> {
+    let mut bytes = vec![];
+
+    loop {
+        let c = anyhow::result(buf.read_u8())?;
         if bytes.is_empty() && c.is_ascii_whitespace() {
             continue;
         }
@@ -208,10 +298,14 @@ fn read_word(buf: &mut bytebuffer::ByteReader) -> String {
             }
         }
     }
-    return String::from_utf8(bytes).unwrap();
+    return Ok(String::from_utf8(bytes).unwrap());
 }
 
-fn read_until_ignore_space(buf: &mut bytebuffer::ByteReader, target: u8) -> bool {
+fn read_until_ignore_space(
+    buf: &mut bytebuffer::ByteReader,
+    target: u8,
+    last: Option<&mut u8>,
+) -> bool {
     loop {
         match buf.read_u8() {
             Ok(c) => {
@@ -221,6 +315,14 @@ fn read_until_ignore_space(buf: &mut bytebuffer::ByteReader, target: u8) -> bool
                 if c.is_ascii_whitespace() {
                     continue;
                 }
+
+                match last {
+                    Some(ptr) => {
+                        *ptr = c;
+                    }
+                    None => {}
+                }
+
                 return false;
             }
             Err(_) => {
@@ -230,12 +332,85 @@ fn read_until_ignore_space(buf: &mut bytebuffer::ByteReader, target: u8) -> bool
     }
 }
 
+fn read_line(buf: &mut bytebuffer::ByteReader) -> anyhow::Result<String> {
+    let mut bytes = vec![];
+
+    loop {
+        let c = anyhow::result(buf.read_u8())?;
+        if c == b'\n' {
+            break;
+        }
+        bytes.push(c);
+    }
+    return Ok(String::from_utf8(bytes).unwrap());
+}
+
+fn read_qouted_string(buf: &mut bytebuffer::ByteReader) -> anyhow::Result<String> {
+    let mut tmp = vec![];
+    let mut escaped = false;
+
+    loop {
+        let c = anyhow::result(buf.read_u8())?;
+        if escaped {
+            tmp.push(c);
+            continue;
+        }
+
+        if c == b'\\' {
+            escaped = true;
+            continue;
+        }
+
+        if c == b'"' {
+            break;
+        }
+    }
+    return Ok(String::from_utf8(tmp).unwrap());
+}
+
+fn read_strings(buf: &mut bytebuffer::ByteReader) -> anyhow::Result<Vec<String>> {
+    let mut result = vec![];
+
+    if !read_until_ignore_space(buf, b'[', None) {
+        return anyhow::error("required a `[`");
+    }
+
+    loop {
+        let mut last: u8 = 0;
+        if !read_until_ignore_space(buf, b'"', Some(&mut last)) {
+            if last == b']' {
+                break;
+            }
+            return anyhow::error("required a `\"`");
+        }
+
+        let tmp = read_qouted_string(buf)?;
+        result.push(tmp);
+
+        if !read_until_ignore_space(buf, b',', Some(&mut last)) {
+            if last == b']' {
+                break;
+            }
+            return anyhow::error("required a `,`");
+        }
+    }
+
+    return Ok(result);
+}
+
+fn unwrap<E: serde::de::Error, T>(v: anyhow::Result<T>) -> Result<T, E> {
+    match v {
+        Ok(v) => Ok(v),
+        Err(e) => Err(serde::de::Error::custom(format!("{}", e))),
+    }
+}
+
 impl Match {
     fn from<E>(&mut self, buf: &mut bytebuffer::ByteReader) -> Result<(), E>
     where
         E: serde::de::Error,
     {
-        let mut first_word = read_word(buf).to_lowercase().trim().to_string();
+        let mut first_word = unwrap(read_word(buf))?.to_lowercase().trim().to_string();
         if first_word.is_empty() {
             first_word = "and".to_string();
         }
@@ -255,7 +430,7 @@ impl Match {
             }
         }
 
-        if !read_until_ignore_space(buf, b'{') {
+        if !read_until_ignore_space(buf, b'{', None) {
             return Err(serde::de::Error::custom("require a `{`"));
         }
 
