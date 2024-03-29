@@ -17,17 +17,17 @@ opt-level = 3
 [dependencies]
 clap = { version = "4.5.1", features = ["derive"] }
 tokio = { version = " 1.36.0", features = ["full"] }
-bytebuffer = "2.2.0"
+bytebuffer = { version = "2.2.0" }
 glob = { version = "0.3.1" }
 smallvec = { version = "1.13.1" }
 utils = { path = "./utils" }
 base64 = { version = "0.22.0" }
 sha1 = { version = "0.10.6" }
-slab = "0.4.9"
-regex = "1.10.3"
-woothee = "0.13.0"
-pest = "2.7.8"
-pest_derive = "2.7.8"
+slab = { version = "0.4.9" }
+regex = { version = "1.10.3" }
+woothee = { version = "0.13.0" }
+pest = { version = "2.7.8" }
+pest_derive = { version = "2.7.8" }
 
 # compression
 flate2 = { version = "1.0.28" }
