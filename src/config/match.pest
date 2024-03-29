@@ -27,9 +27,9 @@ InOp = { ^"in" ~ strgins }
 
 Op = { QoutedStringOp | IntOp | InOp }
 
-Not = { ^"not" }
+Options = { ^"not" | ^"trim" | ^"ignorecase" }
 
-Condition = { ConditionLeft ~ (Not)? ~ (Op)? }
+Condition = { ConditionLeft ~ (Options)* ~ (Op)? }
 
 Match = {
     (ident ~ ":")? ~ Logics ~ "{" ~ (Condition ~ ";")+ ~ "}"

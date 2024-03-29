@@ -2,7 +2,7 @@ use pest::Parser;
 use serde::de::Visitor;
 use utils::anyhow;
 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Debug)]
 pub enum CondationKind {
     Code,
     Method,
@@ -16,7 +16,7 @@ pub enum CondationKind {
     MatchRef,
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Debug)]
 pub enum OpKind {
     Eq,
     Lt,
@@ -34,6 +34,7 @@ pub enum OpKind {
     IntGe,
 }
 
+#[derive(Debug)]
 pub enum MultiValuePolicy {
     All,
     Any,
@@ -42,6 +43,7 @@ pub enum MultiValuePolicy {
     Nth(u16),
 }
 
+#[derive(Debug)]
 pub struct Condation {
     pub kind: CondationKind,
     pub left: String,
@@ -68,12 +70,15 @@ impl Default for Condation {
     }
 }
 
+#[derive(Debug)]
 pub enum LogicKind {
     And,
     Or,
 }
 
+#[derive(Debug)]
 pub struct Match {
+    pub name: String,
     pub logic: LogicKind,
     pub conds: Vec<Condation>,
 }
@@ -81,6 +86,7 @@ pub struct Match {
 impl Default for Match {
     fn default() -> Self {
         Self {
+            name: Default::default(),
             logic: LogicKind::And,
             conds: Default::default(),
         }
@@ -143,38 +149,195 @@ impl<'de> Visitor<'de> for MatchVisitor {
     }
 }
 
+fn update_condition_left(ins: &mut Condation, pair: pest::iterators::Pair<'_, Rule>) {
+    for ele in pair.into_inner() {
+        match ele.as_rule() {
+            Rule::ConditionKinds => match ele.as_str().to_lowercase().as_str() {
+                "code" => {
+                    ins.kind = CondationKind::Code;
+                }
+                "method" => {
+                    ins.kind = CondationKind::Method;
+                }
+                "path" => {
+                    ins.kind = CondationKind::Path;
+                }
+                "query" => {
+                    ins.kind = CondationKind::Query;
+                }
+                "header" => {
+                    ins.kind = CondationKind::Header;
+                }
+                "cookie" => {
+                    ins.kind = CondationKind::Cookie;
+                }
+                "useragent" | "ua" => {
+                    ins.kind = CondationKind::UserAgent;
+                }
+                "form" => {
+                    ins.kind = CondationKind::FormBody;
+                }
+                "json" => {
+                    ins.kind = CondationKind::JsonBody;
+                }
+                "ref" => {
+                    ins.kind = CondationKind::MatchRef;
+                }
+                _ => {}
+            },
+            Rule::ConditionLeftParam => {
+                for ev in ele.clone().into_inner() {
+                    match ev.as_rule() {
+                        Rule::ident => {
+                            ins.left = ev.as_str().to_string();
+                        }
+                        Rule::MultiValuesOpts => {
+                            let mvp = ev.as_str().to_lowercase();
+                            match mvp.as_str() {
+                                "all" => {
+                                    ins.mvp = Some(MultiValuePolicy::All);
+                                }
+                                "any" => {
+                                    ins.mvp = Some(MultiValuePolicy::Any);
+                                }
+                                "first" => {
+                                    ins.mvp = Some(MultiValuePolicy::First);
+                                }
+                                "last" => {
+                                    ins.mvp = Some(MultiValuePolicy::Last);
+                                }
+                                _ => {}
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn update_condition_op(ins: &mut Condation, pair: pest::iterators::Pair<'_, Rule>) {}
+
+fn make_condation(pair: pest::iterators::Pair<'_, Rule>) -> Condation {
+    let mut ins = Condation::default();
+    for ele in pair.into_inner() {
+        match ele.as_rule() {
+            Rule::ConditionLeft => {
+                update_condition_left(&mut ins, ele.clone());
+            }
+            Rule::Options => match ele.as_str().to_lowercase().as_str() {
+                "not" => {
+                    ins.not = Some(true);
+                }
+                "trim" => {
+                    ins.trim_space = Some(true);
+                }
+                "ignorecase" => {
+                    ins.ignore_case = Some(true);
+                }
+                _ => {}
+            },
+            Rule::Op => {
+                update_condition_op(&mut ins, ele.clone());
+            }
+            _ => {}
+        }
+    }
+    return ins;
+}
+
+fn parse(txt: &str) -> anyhow::Result<Vec<Match>> {
+    let pv = anyhow::result(MatchParser::parse(Rule::File, txt))?;
+    let file = anyhow::option(
+        pv.filter(|v| match v.as_rule() {
+            Rule::File => true,
+            _ => false,
+        })
+        .last(),
+        "empty file",
+    )?;
+
+    let mut matchs = vec![];
+
+    for item in file.into_inner() {
+        match item.as_rule() {
+            Rule::Match => {}
+            _ => {
+                continue;
+            }
+        }
+
+        let mut ins = Match::default();
+
+        for ele in item.clone().into_inner() {
+            match ele.as_rule() {
+                Rule::ident => {
+                    ins.name = ele.as_str().to_string();
+                }
+                Rule::Logics => match ele.as_str().to_lowercase().as_str() {
+                    "and" => {
+                        ins.logic = LogicKind::And;
+                    }
+                    "or" => {
+                        ins.logic = LogicKind::Or;
+                    }
+                    _ => {}
+                },
+                Rule::Condition => ins.conds.push(make_condation(ele.clone())),
+                _ => {}
+            }
+        }
+
+        matchs.push(ins)
+    }
+
+    Ok(matchs)
+}
+
 #[cfg(test)]
 mod tests {
-    use pest::Parser;
-
-    use super::MatchParser;
+    use crate::config::r#match::parse;
 
     #[test]
     fn test_parse_match() {
-        let pairs = MatchParser::parse(
-            super::Rule::File,
-            "
-and {
-    code == 200;
+        for ele in parse(
+            r#"
+IsWindows:and {
+ua<platform> contains "windows";
 }
-",
+
+IsAndroid:and {
+ua<platform> contains "android";
+}
+
+IsWindowsOrAndroid:or {
+ref<IsWindows>;
+
+ref<IsAndroid>;
+}
+
+CanAcceptGzip:and {
+header<accept-encoding:all> contains "gzip";
+}
+
+and {
+path match "^/account/(?<name>\\w+)/index\\.html$";
+
+ref<IsWindowsOrAndroid>;
+
+ref<CanAcceptGzip>;
+
+query<servers:all> in [
+    "10", "11", "12"
+];
+}
+"#,
         )
-        .unwrap();
-
-        for pair in pairs.clone().flatten() {
-            match pair.as_rule() {
-                super::Rule::Match => {}
-                _ => {
-                    println!("xxx");
-                    continue;
-                }
-            }
-
-            let matchs = pair.into_inner();
-
-            for pair in matchs.clone().flatten() {
-                println!("MatchPart: {}", pair.as_str());
-            }
+        .unwrap()
+        {
+            println!(">>>>>>>>>\r\n{:?}\r\n", ele);
         }
     }
 }
