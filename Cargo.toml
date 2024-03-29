@@ -36,7 +36,7 @@ toml = { version = "0.8.10" }
 serde = { version = "1.0.197", features = ["derive"] }
 
 # ssl
-tokio-rustls = { version = "0.25.0" }
+tokio-rustls = { version = "0.26.0" }
 rustls-pemfile = { version = "2.1.0" }
 
 # loggging
