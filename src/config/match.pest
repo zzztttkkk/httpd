@@ -9,11 +9,12 @@ char    =  {
   | "\\" ~ ("\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t")
 }
 strgins =  { "[" ~ (string) ~ ("," ~ string)* ~ "]" }
+int     = @{ (ASCII_DIGIT)+ }
 
 Logics = { ^"and" | ^"or" }
 
 ConditionKinds     = { ^"code" | ^"method" | ^"path" | ^"query" | ^"header" | ^"cookie" | ^"useragent" | ^"ua" | ^"form" | ^"json" | ^"ref" }
-MultiValuesOpts    = { ^"all" | ^"any" | ^"first" | ^"last" | (^"nth(" ~ (ASCII_DIGIT)+ ~ ")") }
+MultiValuesOpts    = { ^"all" | ^"any" | ^"first" | ^"last" | (^"nth(" ~ int ~ ")") }
 ConditionLeftParam = { "<" ~ ident ~ (":" ~ MultiValuesOpts)? ~ ">" }
 ConditionLeft      = { ConditionKinds ~ (ConditionLeftParam)? }
 
@@ -21,7 +22,7 @@ QoutedStringOpKinds = { ^"eq" | ^"gt" | ^"lt" | ^"ge" | ^"le" | ^"contains" | ^"
 QoutedStringOp      = { QoutedStringOpKinds ~ string }
 
 IntOpKinds = { "==" | ">" | "<" | ">=" | "<=" }
-IntOp      = { IntOpKinds ~ (ASCII_DIGIT)+ }
+IntOp      = { IntOpKinds ~ int }
 
 InOp = { ^"in" ~ strgins }
 
