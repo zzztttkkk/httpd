@@ -4,23 +4,7 @@ use serde::Deserialize;
 
 use utils::anyhow;
 
-use super::{http::HttpConfig, logging::LoggingConfig, tcp::TcpConfig};
-
-#[derive(Deserialize, Clone, Debug, Default)]
-pub struct Match {
-    #[serde(
-        default,
-        alias = "Pattern",
-        alias = "regexp",
-        alias = "Regexp",
-        alias = "regex",
-        alias = "Regex"
-    )]
-    path: Option<String>,
-
-    #[serde(default, alias = "Headers")]
-    headers: HashMap<String, String>,
-}
+use super::{http::HttpConfig, logging::LoggingConfig, matchs::Match, tcp::TcpConfig};
 
 #[derive(Deserialize, Clone, Debug, Default)]
 pub struct Rewrite {}

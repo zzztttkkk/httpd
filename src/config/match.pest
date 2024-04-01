@@ -10,6 +10,7 @@ char    =  {
 }
 strgins =  { "[" ~ (string) ~ ("," ~ string)* ~ "]" }
 int     = @{ (ASCII_DIGIT)+ }
+ints    =  { "[" ~ (int) ~ ("," ~ int)* ~ "]" }
 
 Logics = { ^"and" | ^"or" }
 
@@ -24,9 +25,10 @@ QoutedStringOp      = { QoutedStringOpKinds ~ string }
 IntOpKinds = { "==" | ">" | "<" | ">=" | "<=" }
 IntOp      = { IntOpKinds ~ int }
 
-InOp = { ^"in" ~ strgins }
+InStringsOp = { ^"in" ~ strgins }
+InIntsOp    = { ^"in" ~ ints }
 
-Op = { QoutedStringOp | IntOp | InOp }
+Op = { QoutedStringOp | IntOp | InStringsOp | InIntsOp }
 
 Options = { ^"not" | ^"trim" | ^"ignorecase" }
 

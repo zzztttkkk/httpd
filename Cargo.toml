@@ -42,5 +42,5 @@ tokio-rustls = { version = "0.26.0" }
 rustls-pemfile = { version = "2.1.0" }
 
 # loggging
-log = { version = "0.4.21", features = ["kv"] }
+log = { version = "0.4.21", features = ["kv", "kv_serde"] }
 logging = { path = "./logging" }

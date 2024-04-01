@@ -1,8 +1,8 @@
 use pest::Parser;
-use serde::de::Visitor;
+use serde::{de::Visitor, Deserialize};
 use utils::anyhow;
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub enum CondationKind {
     Code,
     Method,
@@ -16,7 +16,7 @@ pub enum CondationKind {
     MatchRef,
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub enum OpKind {
     Eq,
     Lt,
@@ -34,18 +34,18 @@ pub enum OpKind {
     IntGe,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum MultiValuePolicy {
     All,
     Any,
     First,
     Last,
-    Nth(u16),
+    Nth(i16),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Default)]
 pub struct Condation {
-    pub kind: CondationKind,
+    pub kind: Option<CondationKind>,
     pub left: String,
     pub not: Option<bool>,
     pub ignore_case: Option<bool>,
@@ -55,42 +55,17 @@ pub struct Condation {
     pub right: Option<Vec<String>>,
 }
 
-impl Default for Condation {
-    fn default() -> Self {
-        Self {
-            kind: CondationKind::Method,
-            left: Default::default(),
-            op: Default::default(),
-            not: Default::default(),
-            mvp: Default::default(),
-            right: Default::default(),
-            ignore_case: Default::default(),
-            trim_space: Default::default(),
-        }
-    }
-}
-
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum LogicKind {
     And,
     Or,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Default)]
 pub struct Match {
     pub name: String,
-    pub logic: LogicKind,
+    pub logic: Option<LogicKind>,
     pub conds: Vec<Condation>,
-}
-
-impl Default for Match {
-    fn default() -> Self {
-        Self {
-            name: Default::default(),
-            logic: LogicKind::And,
-            conds: Default::default(),
-        }
-    }
 }
 
 #[derive(pest_derive::Parser)]
@@ -98,7 +73,7 @@ impl Default for Match {
 pub struct MatchParser;
 
 #[derive(Default)]
-pub struct MatchVisitor {}
+pub struct MatchVisitor;
 
 fn unwrap<E: serde::de::Error, T>(v: anyhow::Result<T>) -> Result<T, E> {
     match v {
@@ -149,41 +124,55 @@ impl<'de> Visitor<'de> for MatchVisitor {
     }
 }
 
-fn update_condition_left(ins: &mut Condation, pair: pest::iterators::Pair<'_, Rule>) {
+impl<'de> Deserialize<'de> for Match {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_any(MatchVisitor)
+    }
+}
+
+fn update_condition_left(
+    ins: &mut Condation,
+    pair: pest::iterators::Pair<'_, Rule>,
+) -> anyhow::Result<()> {
     for ele in pair.into_inner() {
         match ele.as_rule() {
             Rule::ConditionKinds => match ele.as_str().to_lowercase().as_str() {
                 "code" => {
-                    ins.kind = CondationKind::Code;
+                    ins.kind = Some(CondationKind::Code);
                 }
                 "method" => {
-                    ins.kind = CondationKind::Method;
+                    ins.kind = Some(CondationKind::Method);
                 }
                 "path" => {
-                    ins.kind = CondationKind::Path;
+                    ins.kind = Some(CondationKind::Path);
                 }
                 "query" => {
-                    ins.kind = CondationKind::Query;
+                    ins.kind = Some(CondationKind::Query);
                 }
                 "header" => {
-                    ins.kind = CondationKind::Header;
+                    ins.kind = Some(CondationKind::Header);
                 }
                 "cookie" => {
-                    ins.kind = CondationKind::Cookie;
+                    ins.kind = Some(CondationKind::Cookie);
                 }
                 "useragent" | "ua" => {
-                    ins.kind = CondationKind::UserAgent;
+                    ins.kind = Some(CondationKind::UserAgent);
                 }
                 "form" => {
-                    ins.kind = CondationKind::FormBody;
+                    ins.kind = Some(CondationKind::FormBody);
                 }
                 "json" => {
-                    ins.kind = CondationKind::JsonBody;
+                    ins.kind = Some(CondationKind::JsonBody);
                 }
                 "ref" => {
-                    ins.kind = CondationKind::MatchRef;
+                    ins.kind = Some(CondationKind::MatchRef);
                 }
-                _ => {}
+                _ => {
+                    unreachable!();
+                }
             },
             Rule::ConditionLeftParam => {
                 for ev in ele.clone().into_inner() {
@@ -206,26 +195,66 @@ fn update_condition_left(ins: &mut Condation, pair: pest::iterators::Pair<'_, Ru
                                 "last" => {
                                     ins.mvp = Some(MultiValuePolicy::Last);
                                 }
-                                _ => {}
+                                _ => {
+                                    if mvp.starts_with("nth(") && mvp.ends_with(")") {
+                                        match mvp[4..(mvp.len() - 1)].parse::<i16>() {
+                                            Ok(num) => {
+                                                ins.mvp = Some(MultiValuePolicy::Nth(num));
+                                            }
+                                            Err(_) => {
+                                                return anyhow::error(
+                                                    format!(
+                                                        "unexpected multu value policy: `{}`",
+                                                        mvp
+                                                    )
+                                                    .as_str(),
+                                                );
+                                            }
+                                        }
+                                    } else {
+                                        unreachable!();
+                                    }
+                                }
                             }
                         }
-                        _ => {}
+                        _ => {
+                            unreachable!();
+                        }
                     }
                 }
             }
-            _ => {}
+            _ => {
+                unreachable!();
+            }
         }
     }
+    return Ok(());
 }
 
-fn update_condition_op(ins: &mut Condation, pair: pest::iterators::Pair<'_, Rule>) {}
+fn update_condition_op(
+    ins: &mut Condation,
+    pair: pest::iterators::Pair<'_, Rule>,
+) -> anyhow::Result<()> {
+    for ele in pair.into_inner() {
+        match ele.as_rule() {
+            Rule::QoutedStringOp => {}
+            Rule::IntOp => {}
+            Rule::InIntsOp => {}
+            Rule::InStringsOp => {}
+            _ => {
+                unreachable!()
+            }
+        }
+    }
+    Ok(())
+}
 
-fn make_condation(pair: pest::iterators::Pair<'_, Rule>) -> Condation {
+fn make_condation(pair: pest::iterators::Pair<'_, Rule>) -> anyhow::Result<Condation> {
     let mut ins = Condation::default();
     for ele in pair.into_inner() {
         match ele.as_rule() {
             Rule::ConditionLeft => {
-                update_condition_left(&mut ins, ele.clone());
+                update_condition_left(&mut ins, ele.clone())?;
             }
             Rule::Options => match ele.as_str().to_lowercase().as_str() {
                 "not" => {
@@ -237,15 +266,19 @@ fn make_condation(pair: pest::iterators::Pair<'_, Rule>) -> Condation {
                 "ignorecase" => {
                     ins.ignore_case = Some(true);
                 }
-                _ => {}
+                _ => {
+                    unreachable!();
+                }
             },
             Rule::Op => {
-                update_condition_op(&mut ins, ele.clone());
+                update_condition_op(&mut ins, ele.clone())?;
             }
-            _ => {}
+            _ => {
+                unreachable!();
+            }
         }
     }
-    return ins;
+    return Ok(ins);
 }
 
 fn parse(txt: &str) -> anyhow::Result<Vec<Match>> {
@@ -278,15 +311,19 @@ fn parse(txt: &str) -> anyhow::Result<Vec<Match>> {
                 }
                 Rule::Logics => match ele.as_str().to_lowercase().as_str() {
                     "and" => {
-                        ins.logic = LogicKind::And;
+                        ins.logic = Some(LogicKind::And);
                     }
                     "or" => {
-                        ins.logic = LogicKind::Or;
+                        ins.logic = Some(LogicKind::Or);
                     }
-                    _ => {}
+                    _ => {
+                        unreachable!();
+                    }
                 },
-                Rule::Condition => ins.conds.push(make_condation(ele.clone())),
-                _ => {}
+                Rule::Condition => ins.conds.push(make_condation(ele.clone())?),
+                _ => {
+                    unreachable!();
+                }
             }
         }
 
@@ -298,40 +335,36 @@ fn parse(txt: &str) -> anyhow::Result<Vec<Match>> {
 
 #[cfg(test)]
 mod tests {
-    use crate::config::r#match::parse;
+    use crate::config::matchs::parse;
 
     #[test]
     fn test_parse_match() {
         for ele in parse(
             r#"
 IsWindows:and {
-ua<platform> contains "windows";
+    ua<platform> contains "windows";
 }
 
 IsAndroid:and {
-ua<platform> contains "android";
+    ua<platform> contains "android";
 }
 
 IsWindowsOrAndroid:or {
-ref<IsWindows>;
-
-ref<IsAndroid>;
+    ref<IsWindows>;
+    ref<IsAndroid>;
 }
 
 CanAcceptGzip:and {
-header<accept-encoding:all> contains "gzip";
+    header<accept-encoding:all> contains "gzip";
 }
 
 and {
-path match "^/account/(?<name>\\w+)/index\\.html$";
-
-ref<IsWindowsOrAndroid>;
-
-ref<CanAcceptGzip>;
-
-query<servers:all> in [
-    "10", "11", "12"
-];
+    path match "^/account/(?<name>\\w+)/index\\.html$";
+    ref<IsWindowsOrAndroid>;
+    ref<CanAcceptGzip>;
+    query<servers:all> in [
+        "10", "11", "12"
+    ];
 }
 "#,
         )
