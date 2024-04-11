@@ -4,13 +4,13 @@ use std::{
     vec,
 };
 
-use ::logging::{
+use crate::logging::{
     init as logging_init, ColorfulLineRendererBuilder, JsonLineRenderer, Renderer, ShutdownGuard,
 };
 use serde::Deserialize;
 
+use crate::utils::{anyhow, paths};
 use slab::Slab;
-use utils::{anyhow, paths};
 
 use self::{
     http::HttpConfig,

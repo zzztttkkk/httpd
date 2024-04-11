@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-use utils::anyhow;
+use crate::utils::anyhow;
 
 use super::{bytes_size::BytesSize, tls::TlsConfig};
 

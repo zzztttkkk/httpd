@@ -1,4 +1,4 @@
-use utils::anyhow;
+use crate::utils::anyhow;
 
 use crate::{config::service::ServiceConfig, message::Message, protocols::Protocol};
 
@@ -19,7 +19,7 @@ impl Service for FsService {
         self.cfg
     }
 
-    async fn init(&mut self) -> utils::anyhow::Result<()> {
+    async fn init(&mut self) -> crate::utils::anyhow::Result<()> {
         Ok(())
     }
 

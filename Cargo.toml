@@ -3,9 +3,6 @@ name = "httpd"
 version = "0.0.1"
 edition = "2021"
 
-[workspace]
-members = ["logging", "utils"]
-
 [profile.dev]
 opt-level = 0
 
@@ -20,7 +17,6 @@ tokio = { version = " 1.36.0", features = ["full"] }
 bytebuffer = { version = "2.2.0" }
 glob = { version = "0.3.1" }
 smallvec = { version = "1.13.1" }
-utils = { path = "./utils" }
 base64 = { version = "0.22.0" }
 sha1 = { version = "0.10.6" }
 slab = { version = "0.4.9" }
@@ -28,6 +24,8 @@ regex = { version = "1.10.3" }
 woothee = { version = "0.13.0" }
 pest = { version = "2.7.8" }
 pest_derive = { version = "2.7.8" }
+async-trait = { version = "0.1.79" }
+chrono = { version = "0.4.37" }
 
 # compression
 flate2 = { version = "1.0.28" }
@@ -43,4 +41,4 @@ rustls-pemfile = { version = "2.1.0" }
 
 # loggging
 log = { version = "0.4.21", features = ["kv", "kv_serde"] }
-logging = { path = "./logging" }
+serde_json = "1.0.115"

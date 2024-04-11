@@ -1,6 +1,6 @@
 use tokio::io::AsyncWriteExt;
 
-use crate::{appender::Appender, appender::Filter, item::Item};
+use super::{appender::Appender, appender::Filter, item::Item};
 
 pub struct ConsoleAppender {
     service_idx: usize,

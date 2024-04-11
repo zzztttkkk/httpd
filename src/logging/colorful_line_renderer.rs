@@ -1,6 +1,6 @@
-use utils::luxon;
+use crate::utils::luxon;
 
-use crate::{
+use super::{
     appender::Renderer,
     color::{Color, ColorScheme},
     item::Item,
@@ -122,19 +122,21 @@ mod tests {
     use log::Level;
     use slab::Slab;
 
-    use crate::ColorfulLineRenderer;
+    use crate::logging::{appender, ConsoleAppender};
+
+    use super::ColorfulLineRenderer;
 
     #[test]
     fn test_colors() {
         let mut slab = Slab::new();
         slab.insert(vec![0]);
 
-        let _g = crate::init(
+        let _g = crate::logging::init(
             Level::Trace,
-            vec![Box::new(crate::ConsoleAppender::new(
+            vec![Box::new(ConsoleAppender::new(
                 0,
                 "ColorfulLineRenderer",
-                crate::appender::filter(|_| true),
+                appender::filter(|_| true),
             ))],
             vec![Box::new(ColorfulLineRenderer::default())],
             slab,

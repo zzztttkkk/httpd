@@ -1,5 +1,5 @@
+use crate::utils::anyhow;
 use serde::Deserialize;
-use utils::anyhow;
 
 use super::duration_in_millis::DurationInMillis;
 

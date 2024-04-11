@@ -1,5 +1,5 @@
+use crate::utils::anyhow;
 use serde::Deserialize;
-use utils::anyhow;
 
 use super::{bytes_size::BytesSize, duration_in_millis::DurationInMillis};
 

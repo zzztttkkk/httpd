@@ -1,7 +1,7 @@
+use crate::utils::anyhow;
 use tokio::io::AsyncWriteExt;
-use utils::anyhow;
 
-use crate::{appender::Appender, appender::Filter, item::Item};
+use super::{appender::Appender, appender::Filter, item::Item};
 
 pub struct FileAppender {
     inner: tokio::io::BufWriter<tokio::fs::File>,

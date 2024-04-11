@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use crate::anyhow;
+use super::anyhow;
 
 pub fn namewithoutext(fp: &str) -> anyhow::Result<String> {
     let fp = anyhow::result(std::path::PathBuf::from_str(fp))?;
@@ -23,7 +23,7 @@ pub fn namewithoutext(fp: &str) -> anyhow::Result<String> {
 
 #[cfg(test)]
 mod tests {
-    use crate::paths::namewithoutext;
+    use super::namewithoutext;
 
     #[test]
     fn test_namewithoutext() {

@@ -92,7 +92,7 @@ pub fn endofhour(dt: Option<std::time::SystemTime>) -> anyhow::Result<u128> {
 
 #[cfg(test)]
 mod tests {
-    use crate::luxon::{endofday, endofhour, local};
+    use crate::utils::luxon::{endofday, endofhour, local};
 
     #[test]
     fn test_local() {

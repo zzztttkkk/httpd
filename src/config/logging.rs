@@ -2,7 +2,7 @@ use std::{collections::HashSet, str::FromStr};
 
 use serde::Deserialize;
 
-use utils::anyhow;
+use crate::utils::anyhow;
 
 use super::bytes_size::BytesSize;
 
@@ -74,8 +74,8 @@ struct FilterConifg {
     level_equal: bool,
 }
 
-impl logging::Filter for FilterConifg {
-    fn filter(&self, item: &logging::Item) -> bool {
+impl crate::logging::Filter for FilterConifg {
+    fn filter(&self, item: &crate::logging::Item) -> bool {
         if self.level_equal {
             item.level == self.level
         } else {
@@ -91,12 +91,15 @@ impl LoggingConfig {
         Ok(())
     }
 
-    pub fn init(&self, logpath: &str) -> anyhow::Result<Option<Vec<Box<dyn logging::Appender>>>> {
+    pub fn init(
+        &self,
+        logpath: &str,
+    ) -> anyhow::Result<Option<Vec<Box<dyn crate::logging::Appender>>>> {
         if self.disable.is_some() && self.disable.unwrap() {
             return Ok(None);
         }
 
-        let mut appenders: Vec<Box<dyn logging::Appender>> = vec![];
+        let mut appenders: Vec<Box<dyn crate::logging::Appender>> = vec![];
         let mut fps: HashSet<String> = HashSet::default();
 
         for (idx, cfg) in self.appenders.iter().enumerate() {
@@ -106,7 +109,7 @@ impl LoggingConfig {
                         log::Level::from_str(&(level.clone()).unwrap_or("trace".to_string()))
                             .unwrap_or(log::Level::Trace);
 
-                    appenders.push(Box::new(logging::ConsoleAppender::new(
+                    appenders.push(Box::new(crate::logging::ConsoleAppender::new(
                         self.service_idx,
                         "colored",
                         Box::new(FilterConifg {
@@ -150,7 +153,7 @@ impl LoggingConfig {
                     };
 
                     if *daily {
-                        appenders.push(Box::new(logging::RotationFileAppender::daily(
+                        appenders.push(Box::new(crate::logging::RotationFileAppender::daily(
                             self.service_idx,
                             &path,
                             bufsize.0,
@@ -158,7 +161,7 @@ impl LoggingConfig {
                             Box::new(filter),
                         )?));
                     } else {
-                        appenders.push(Box::new(logging::FileAppender::new(
+                        appenders.push(Box::new(crate::logging::FileAppender::new(
                             self.service_idx,
                             &path,
                             bufsize.0,

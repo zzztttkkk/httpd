@@ -1,4 +1,4 @@
-use crate::item::Item;
+use super::Item;
 
 pub trait Renderer: Send + Sync {
     fn name(&self) -> &str;

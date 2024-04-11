@@ -1,4 +1,4 @@
-use utils::anyhow;
+use crate::utils::anyhow;
 
 use crate::{
     config::service::ServiceConfig, ctx::ConnContext, message::Message, protocols::Protocol,
@@ -20,7 +20,7 @@ impl Service for HelloWorldService {
         self.0
     }
 
-    async fn init(&mut self) -> utils::anyhow::Result<()> {
+    async fn init(&mut self) -> crate::utils::anyhow::Result<()> {
         Ok(())
     }
 

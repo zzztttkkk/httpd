@@ -1,6 +1,6 @@
-use utils::{anyhow, luxon};
+use crate::utils::{anyhow, luxon};
 
-use crate::{
+use super::{
     appender::{Appender, Filter},
     file_appender::FileAppender,
 };
@@ -35,7 +35,7 @@ impl Appender for RotationFileAppender {
     }
 
     #[inline]
-    fn filter(&self, item: &crate::item::Item) -> bool {
+    fn filter(&self, item: &super::item::Item) -> bool {
         self.inner.filter(item)
     }
 
@@ -192,9 +192,9 @@ impl RotationFileAppender {
 }
 #[cfg(test)]
 mod tests {
-    use utils::anyhow;
+    use crate::{logging::appender, utils::anyhow};
 
-    use crate::RotationFileAppender;
+    use super::RotationFileAppender;
 
     #[test]
     fn test_rotation_new() -> anyhow::Result<()> {
@@ -204,7 +204,7 @@ mod tests {
             "../log/v.log",
             8092,
             "",
-            crate::appender::filter(|_| true),
+            appender::filter(|_| true),
         )?;
         Ok(())
     }

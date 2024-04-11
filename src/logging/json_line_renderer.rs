@@ -1,6 +1,6 @@
-use utils::luxon;
+use crate::utils::luxon;
 
-use crate::appender::Renderer;
+use super::appender::Renderer;
 
 #[derive(Debug, Default)]
 pub struct JsonLineRenderer {
@@ -16,7 +16,7 @@ impl Renderer for JsonLineRenderer {
         &self.name
     }
 
-    fn render(&self, item: &crate::item::Item, buf: &mut Vec<u8>) {
+    fn render(&self, item: &super::item::Item, buf: &mut Vec<u8>) {
         buf.push(b'{');
 
         macro_rules! push_with_quote {

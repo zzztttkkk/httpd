@@ -1,7 +1,7 @@
+use crate::utils::anyhow;
 use slab::Slab;
-use utils::anyhow;
 
-use crate::{appender::Appender, appender::Renderer, consumer::Consumer, item::Item};
+use super::{appender::Appender, appender::Renderer, consumer::Consumer, item::Item};
 
 enum Message {
     Flush(std::sync::Arc<std::sync::atomic::AtomicBool>),
