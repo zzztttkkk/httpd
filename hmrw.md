@@ -18,7 +18,7 @@ match IsWindowsOrAndroid:or {
 }
 
 match CanAcceptGzip {
-    header<accept-encoding:all> contains "gzip";
+    header<accept-encoding:any> contains "gzip";
 }
 
 match IsAccountIndex {
@@ -27,18 +27,16 @@ match IsAccountIndex {
     ref<IsWindowsOrAndroid>;
     
     ref<CanAcceptGzip>;
-    
-    query not contains ["lang"];
 }
 
-fn return_404_if_not_windows {
-    match IsNotWindows;
-    code replace 404;
-    end;
+fn set_code(value) {
+    code set ${value};
 }
 
-return_404_if_not_windows();
-
-
-
+fn main {
+    if IsNoWindows {
+        set_code(404);
+        return;
+    }
+}
 ```
