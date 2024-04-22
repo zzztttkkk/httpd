@@ -21,23 +21,6 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           files: |
-            target/release/httpd.linux-64
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  
-  release-on-windows:
-    name: Release on Windows
-    runs-on: windows-latest
-    steps:          
-      - uses: actions/checkout@v4
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
-      - run: cargo build --release
-      - run: cp target/release/httpd.exe target/release/httpd.windows-adm64.exe
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            target/release/httpd.windows-amd64.exe
+            target/release/httpd.linux-amd64
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
