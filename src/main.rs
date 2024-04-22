@@ -26,8 +26,17 @@ mod utils;
 mod ws;
 mod ws_impl;
 
+const PROGRAM_NAME: &'static str = "
+██╗  ██╗████████╗████████╗██████╗ ██████╗    ██████╗ ███████╗
+██║  ██║╚══██╔══╝╚══██╔══╝██╔══██╗██╔══██╗   ██╔══██╗██╔════╝
+███████║   ██║      ██║   ██████╔╝██║  ██║   ██████╔╝███████╗
+██╔══██║   ██║      ██║   ██╔═══╝ ██║  ██║   ██╔══██╗╚════██║
+██║  ██║   ██║      ██║   ██║     ██████╔╝██╗██║  ██║███████║
+╚═╝  ╚═╝   ╚═╝      ╚═╝   ╚═╝     ╚═════╝ ╚═╝╚═╝  ╚═╝╚══════╝                                                             
+";
+
 #[derive(clap::Parser, Debug)]
-#[command(name = "httpd")]
+#[command(name = PROGRAM_NAME)]
 #[command(about = "A simple http server", long_about = None)]
 pub struct Args {
     #[arg(name = "config", default_value = "")]
@@ -263,7 +272,12 @@ fn main() -> anyhow::Result<()> {
     let _g = config.logging()?;
     let config: &'static Config = unsafe { std::mem::transmute(&config) };
 
+    println!("{}", PROGRAM_NAME);
     println!("httpd: load configuration ok, pid: {}", std::process::id());
+    if (config.services.len() < 1) {
+        println!("httpd: empty service, exit");
+        return Ok(());
+    }
 
     if config.runtime.per_core.is_some() && config.runtime.per_core.unwrap() {
         run_per_core(config)?;

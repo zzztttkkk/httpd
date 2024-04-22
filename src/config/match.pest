@@ -14,28 +14,30 @@ ints    =  { "[" ~ (int) ~ ("," ~ int)* ~ "]" }
 
 Logics = { ^"and" | ^"or" }
 
-ConditionKinds     = { ^"code" | ^"method" | ^"path" | ^"query" | ^"header" | ^"cookie" | ^"useragent" | ^"ua" | ^"form" | ^"json" | ^"ref" }
+PartKinds = { ^"code" | ^"method" | ^"path" | ^"query" | ^"header" | ^"cookie" | ^"useragent" | ^"ua" | ^"form" | ^"json" | ^"ref" }
+
 MultiValuesOpts    = { ^"all" | ^"any" | ^"first" | ^"last" | (^"nth(" ~ int ~ ")") }
 ConditionLeftParam = { "<" ~ ident ~ (":" ~ MultiValuesOpts)? ~ ">" }
-ConditionLeft      = { ConditionKinds ~ (ConditionLeftParam)? }
+ConditionLeft      = { PartKinds ~ (ConditionLeftParam)? }
 
-QoutedStringOpKinds = { ^"eq" | ^"gt" | ^"lt" | ^"ge" | ^"le" | ^"contains" | ^"match" }
-QoutedStringOp      = { QoutedStringOpKinds ~ string }
+MatchQoutedStringOpKinds = { ^"eq" | ^"gt" | ^"lt" | ^"ge" | ^"le" | ^"contains" | ^"match" }
+MatchQoutedStringOp      = { MatchQoutedStringOpKinds ~ string }
 
-IntOpKinds = { "==" | ">" | "<" | ">=" | "<=" }
-IntOp      = { IntOpKinds ~ int }
+MatchIntOpKinds = { "==" | ">" | "<" | ">=" | "<=" }
+MatchIntOp      = { MatchIntOpKinds ~ int }
 
-InStringsOp = { ^"in" ~ strgins }
-InIntsOp    = { ^"in" ~ ints }
+MatchInStringsOp  = { ^"in" ~ strgins }
+MatchHasStringsOp = { ^"has" ~ strgins }
+MatchInIntsOp     = { ^"in" ~ ints }
 
-Op = { QoutedStringOp | IntOp | InStringsOp | InIntsOp }
+MatchgOp = { MatchQoutedStringOp | MatchIntOp | MatchInStringsOp | MatchHasStringsOp | MatchInIntsOp }
 
-Options = { ^"not" | ^"trim" | ^"ignorecase" }
+MatchOptions = { ^"not" | ^"trim" | ^"ignorecase" }
 
-Condition = { ConditionLeft ~ (Options)* ~ (Op)? }
+Condition = { ConditionLeft ~ (MatchOptions)* ~ (MatchgOp)? }
 
 Match = {
-    (ident ~ ":")? ~ Logics ~ "{" ~ (Condition ~ ";")+ ~ "}"
+    "match" ~ ident ~ ":" ~ Logics ~ "{" ~ (Condition ~ ";")+ ~ "}"
 }
 
 File = {
