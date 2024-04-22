@@ -9,6 +9,8 @@ jobs:
   release-on-ubuntu:
     name: Release on Ubuntu
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions-rust-lang/setup-rust-toolchain@v1
