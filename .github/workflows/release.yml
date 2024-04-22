@@ -15,10 +15,11 @@ jobs:
         with:
           toolchain: stable
       - run: cargo build --release
-      - uses: actions/upload-artifact@v4
+      - uses: software-mansion/action-gh-release@v2
         with:
-          name: httpd.rs
-          path: target/release/httpd
+          files: [ target/release/httpd ]
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   
   # release-on-windows:
   #   name: Release on Windows
