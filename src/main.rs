@@ -1,3 +1,5 @@
+#![allow(dead_code, unused)]
+
 use std::sync::Arc;
 
 use crate::utils::anyhow;
