@@ -15,7 +15,7 @@ jobs:
         with:
           toolchain: stable
       - run: cargo build --release
-      - uses: software-mansion/action-gh-release@v2
+      - uses: softprops/action-gh-release@v2
         with:
           files: |
             target/release/httpd
